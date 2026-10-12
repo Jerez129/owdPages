@@ -1,0 +1,1181 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Adherencia OWD</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap">
+<style>
+/* Layout: tablero de piso. Total y gráfica mensual arriba, luego semanas, detalle por indicador y DTO por persona. */
+:root{
+  --bg:#f2f4f7; --surface:#fcfdfd; --sunken:#eef1f4;
+  --ink:#0d1116; --ink-2:#465060; --muted:#677280;
+  --line:#dde2e8; --axis:#b9c2cc;
+  --accent:#1c5cab; --accent-ink:#ffffff; --series:#2a78d6;
+  --good:#0ca30c; --warn:#fab219; --crit:#d03b3b;
+  --font: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-label: "IBM Plex Sans Condensed", "IBM Plex Sans", system-ui, sans-serif;
+  --r:6px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0e1114; --surface:#171b20; --sunken:#11151a;
+    --ink:#f3f5f7; --ink-2:#b8c0ca; --muted:#8a94a0;
+    --line:#2a3039; --axis:#3b434e;
+    --accent:#6da7ec; --accent-ink:#0d1116; --series:#3987e5;
+    --good:#0ca30c; --warn:#fab219; --crit:#d03b3b;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0e1114; --surface:#171b20; --sunken:#11151a;
+  --ink:#f3f5f7; --ink-2:#b8c0ca; --muted:#8a94a0;
+  --line:#2a3039; --axis:#3b434e;
+  --accent:#6da7ec; --accent-ink:#0d1116; --series:#3987e5;
+  --good:#0ca30c; --warn:#fab219; --crit:#d03b3b;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:14px;line-height:1.45}
+.wrap{max-width:1180px;margin:0 auto;padding-inline:20px;padding-block:22px 48px;display:flex;flex-direction:column;gap:22px}
+h1,h2,h3,p{margin:0}
+h1{font-size:24px;font-weight:600;letter-spacing:-.01em;text-wrap:balance}
+h2{font-size:16px;font-weight:600;text-wrap:balance}
+.lbl{font-family:var(--font-label);font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2)}
+.sub{color:var(--ink-2);overflow-wrap:anywhere}
+.num{font-variant-numeric:tabular-nums}
+
+/* Encabezado */
+.top{display:flex;flex-wrap:wrap;gap:14px 24px;align-items:flex-end;justify-content:space-between}
+.top > div:first-child{min-width:0;display:flex;flex-direction:column;gap:4px}
+.ctrls{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+button,select,.btn{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--axis);border-radius:var(--r);padding:7px 12px;cursor:pointer;line-height:1.3}
+button:hover,.btn:hover,select:hover{border-color:var(--ink-2)}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:500}
+.btn.pri:hover{filter:brightness(1.08)}
+button.quiet{border-color:transparent;background:transparent;color:var(--ink-2);text-decoration:underline;text-underline-offset:3px;padding-inline:6px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.msg,.note{border:1px solid var(--crit);border-left-width:4px;background:var(--surface);padding:10px 14px;border-radius:var(--r)}
+.note{border-color:var(--warn)}
+
+/* Zona de carga */
+.drop{border:2px dashed var(--axis);border-radius:10px;padding:34px 20px;text-align:center;display:flex;flex-direction:column;gap:10px;align-items:center;background:var(--surface)}
+body.dragging .drop{border-color:var(--accent);background:var(--sunken)}
+.drop p{max-width:62ch}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;min-width:0}
+.sechead{display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;justify-content:space-between}
+
+/* Resumen + gráfica mensual */
+.month{display:grid;grid-template-columns:minmax(250px,4fr) minmax(0,8fr);gap:14px}
+.hero{display:flex;flex-direction:column;gap:8px}
+.hero .big{font-size:60px;font-weight:600;line-height:1;letter-spacing:-.02em}
+.facts{display:flex;flex-direction:column;gap:3px;color:var(--ink-2);font-size:13px}
+.meter{height:8px;border-radius:4px;background:var(--trk);overflow:hidden}
+.meter i{display:block;height:100%;background:var(--st);border-radius:0 4px 4px 0}
+.s-good{--st:var(--good);--trk:color-mix(in srgb,var(--good) 18%,var(--surface))}
+.s-warn{--st:var(--warn);--trk:color-mix(in srgb,var(--warn) 24%,var(--surface))}
+.s-crit{--st:var(--crit);--trk:color-mix(in srgb,var(--crit) 16%,var(--surface))}
+.s-none{--st:var(--axis);--trk:var(--sunken)}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:500;white-space:nowrap}
+.chip i{font-style:normal;display:inline-grid;place-items:center;width:16px;height:16px;border-radius:50%;background:var(--st);color:#fff;font-size:10px;font-weight:700;line-height:1}
+.chip.s-warn i{color:#1b1400}
+.legend{display:flex;flex-wrap:wrap;gap:4px 14px;color:var(--ink-2)}
+.legend .chip{font-weight:400}
+
+/* Barras horizontales (adherencia mensual) */
+.hbars{display:flex;flex-direction:column;gap:2px;margin-top:10px}
+.hrow{display:grid;grid-template-columns:minmax(120px,34%) minmax(0,1fr) 96px;gap:4px 12px;align-items:center;padding:5px 6px;border-radius:4px}
+.hrow:hover,.hrow:focus-visible{background:var(--sunken)}
+.hrow .hl{min-width:0;overflow-wrap:anywhere}
+.hrow .ht{position:relative;height:12px;background:var(--sunken);border-radius:0 4px 4px 0}
+.hrow:hover .ht,.hrow:focus-visible .ht{background:var(--line)}
+.hrow .ht i{position:absolute;left:0;top:0;bottom:0;background:var(--st);border-radius:0 4px 4px 0;min-width:1px}
+.hrow .ht u{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--ink);text-decoration:none}
+.hrow .hv{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.hrow .hv small{color:var(--ink-2);margin-left:6px}
+.haxis{display:grid;grid-template-columns:minmax(120px,34%) minmax(0,1fr) 96px;gap:12px;padding:0 6px;font-size:11px;color:var(--muted)}
+.haxis div{display:flex;justify-content:space-between}
+
+/* Filtro */
+.seg{display:flex;flex-wrap:wrap;gap:6px}
+.seg button{padding:5px 12px;border-radius:999px}
+.seg button[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+
+/* Semanas */
+.weekgrid{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:14px}
+.chart{display:flex;flex-direction:column;gap:6px}
+.plot{position:relative;height:190px;margin:22px 0 0 34px;border-bottom:1px solid var(--axis)}
+.grid{position:absolute;left:0;right:0;border-top:1px solid var(--line)}
+.grid span{position:absolute;left:-34px;top:-8px;width:28px;text-align:right;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.cols{position:absolute;inset:0;display:flex;justify-content:space-around;align-items:flex-end}
+.col{position:relative;flex:1;height:100%;display:flex;justify-content:center;align-items:flex-end;cursor:default}
+.col b{display:block;width:24px;background:var(--series);border-radius:4px 4px 0 0;min-height:1px}
+.col:hover b,.col:focus-visible b{filter:brightness(1.15)}
+.col em{position:absolute;left:0;right:0;text-align:center;font-style:normal;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;padding-bottom:3px}
+.xlab{display:flex;justify-content:space-around;margin-left:34px}
+.xlab div{flex:1;text-align:center;min-width:0}
+.xlab strong{display:block;font-family:var(--font-label);font-size:13px}
+.xlab small{display:block;font-size:11px;color:var(--muted)}
+
+/* Tablas */
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+th,td{padding:7px 10px;text-align:left;border-bottom:1px solid var(--line);vertical-align:middle}
+thead th{font-family:var(--font-label);font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap;border-bottom-color:var(--axis)}
+thead th small{display:block;font-family:var(--font);font-size:10.5px;font-weight:400;letter-spacing:0;text-transform:none;color:var(--muted)}
+td.r,th.r{text-align:right;white-space:nowrap}
+td.c,th.c{text-align:center}
+tr.area td{background:var(--sunken);font-weight:600;border-bottom-color:var(--axis)}
+tr.sel td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
+td.wk{text-align:center;white-space:nowrap;min-width:58px}
+td.wk span{display:block;border-radius:4px;padding:3px 6px;background:var(--cellbg)}
+td.wk small{display:block;font-size:11px;color:var(--ink-2)}
+td.wk.s-good span{--cellbg:color-mix(in srgb,var(--good) 20%,transparent)}
+td.wk.s-warn span{--cellbg:color-mix(in srgb,var(--warn) 30%,transparent)}
+td.wk.s-crit span{--cellbg:color-mix(in srgb,var(--crit) 18%,transparent)}
+td.wk.s-none span{--cellbg:transparent;color:var(--muted)}
+.ind td.name{min-width:200px}
+.ind td.bar{min-width:120px;width:22%}
+.extra{color:var(--ink-2);font-size:12px}
+
+/* DTO por persona */
+.ppl tr.p{cursor:pointer}
+.ppl tr.p:hover td{background:var(--sunken)}
+.ppl tr.p td:first-child button{border:0;background:none;padding:0;font:inherit;font-weight:500;color:var(--ink);text-align:left;cursor:pointer;display:inline-flex;gap:8px;align-items:baseline}
+.ppl tr.p td:first-child button::before{content:"▸";color:var(--ink-2);display:inline-block;width:10px}
+.ppl tr.p[aria-expanded="true"] td:first-child button::before{content:"▾"}
+.ppl tr.d > td{background:var(--sunken);padding:8px 10px 14px 28px}
+.ppl tr.d table{background:var(--surface);border:1px solid var(--line);border-radius:4px;min-width:620px}
+table.ppl{min-width:560px}
+.ppl tr.d th{font-size:11px}
+.tag{display:inline-block;border:1px solid var(--axis);border-radius:999px;padding:0 8px;font-size:12px;color:var(--ink-2);white-space:nowrap}
+input[type=text],input[type=number],input[type=search]{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--axis);border-radius:4px;padding:6px 9px}
+.tools{display:flex;gap:8px;align-items:center;flex:0 1 auto;min-width:0}
+.tools input[type=search]{width:230px;min-width:0;flex:0 1 auto}
+.tools button{white-space:nowrap}
+
+/* Plan y reglas */
+.editor{display:flex;flex-direction:column;gap:18px}
+.matrix input[type=number]{width:58px;text-align:right;padding:3px 6px}
+.matrix th,.matrix td{padding:4px 8px}
+.matrix thead th{white-space:normal;text-align:right;vertical-align:bottom;min-width:74px}
+.matrix thead th:first-child{text-align:left}
+.rules{display:flex;flex-wrap:wrap;gap:14px 28px;align-items:center}
+.rules label{display:inline-flex;gap:8px;align-items:center}
+.maprow{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px 24px;margin-top:10px}
+.maprow label{display:flex;flex-direction:column;gap:3px;min-width:0}
+.maprow select{width:100%}
+.notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:22px}
+.notes ul{margin:8px 0 0;padding-left:18px;color:var(--ink-2);display:flex;flex-direction:column;gap:5px;max-width:65ch}
+.notes .card{display:flex;flex-direction:column;gap:4px}
+
+[hidden]{display:none!important}
+.note.ok{border-color:var(--good)}
+
+/* Pestañas */
+.tabs{display:flex;flex-wrap:wrap;gap:2px;border-bottom:1px solid var(--axis)}
+.tabs button{border:0;border-bottom:3px solid transparent;border-radius:0;background:none;padding:9px 14px 8px;color:var(--ink-2);font-weight:500;margin-bottom:-1px}
+.tabs button:hover{color:var(--ink)}
+.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+.view{display:flex;flex-direction:column;gap:22px}
+
+/* Planificador */
+.psec{display:flex;flex-direction:column;gap:12px}
+.ctrls label{display:inline-flex;gap:8px;align-items:center}
+input[type=date]{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--axis);border-radius:4px;padding:5px 8px}
+.ptable{min-width:1000px}
+.ptable th,.ptable td{padding:4px 5px;vertical-align:top}
+.ptable input,.ptable select{width:100%;font-size:13px;padding:5px 7px}
+.ptable select{padding:5px 4px}
+.ptable .pil{font-size:12px;color:var(--ink-2);white-space:nowrap;padding-top:10px}
+.ptable .rm{border:0;background:none;color:var(--muted);padding:4px 8px;font-size:17px;line-height:1}
+.ptable .rm:hover{color:var(--crit)}
+.hint{display:block;font-size:11.5px;color:var(--ink-2);margin-top:3px}
+.hint button{border:0;background:none;padding:0;color:var(--accent);text-decoration:underline;text-underline-offset:2px;font-size:inherit;cursor:pointer}
+.pills{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.pill{display:inline-flex;gap:6px;align-items:center;font-size:12px;border-radius:999px;padding:2px 10px;background:var(--cellbg,transparent);border:1px solid var(--line);white-space:nowrap}
+.pill b{font-weight:600;font-variant-numeric:tabular-nums}
+.pill.s-good{--cellbg:color-mix(in srgb,var(--good) 18%,transparent)}
+.pill.s-warn{--cellbg:color-mix(in srgb,var(--warn) 28%,transparent)}
+.pill.s-crit{--cellbg:color-mix(in srgb,var(--crit) 16%,transparent)}
+.cmp td.st{white-space:nowrap}
+
+#tip{position:fixed;z-index:20;pointer-events:none;background:var(--ink);color:var(--bg);padding:7px 10px;border-radius:5px;font-size:12.5px;line-height:1.4;white-space:pre-line;max-width:280px;box-shadow:0 4px 14px rgba(0,0,0,.25)}
+
+@media (max-width:920px){
+  .month,.weekgrid{grid-template-columns:minmax(0,1fr)}
+}
+@media (max-width:620px){
+  .wrap{padding-inline:16px}
+  .hero .big{font-size:52px}
+  .hrow{grid-template-columns:minmax(0,1fr) 96px}
+  .hrow .hl{grid-column:1/-1}
+  .haxis{grid-template-columns:minmax(0,1fr) 96px}
+  .haxis span:first-child{display:none}
+}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <span class="lbl">OWD · DTO en el puesto de trabajo</span>
+      <h1>Adherencia y planificación de OWD</h1>
+      <p class="sub" id="subtitle">Carga el reporte "Data OWD" para medir el mes contra el plan.</p>
+    </div>
+    <div class="ctrls">
+      <label class="vh" for="monthSel">Mes</label>
+      <select id="monthSel" hidden></select>
+      <label class="btn pri" for="fileIn" id="fileBtn" tabindex="0">Cargar Excel</label>
+      <input class="vh" type="file" id="fileIn" accept=".xlsx,.xls,.csv" multiple tabindex="-1">
+      <button type="button" id="planBtn" aria-expanded="false" aria-controls="editor">Plan y reglas</button>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="Vista">
+    <button type="button" role="tab" data-view="adh">Adherencia mensual</button>
+    <button type="button" role="tab" data-view="plan">Planificador semanal</button>
+    <button type="button" role="tab" data-view="cmp">Plan vs realizado</button>
+  </nav>
+
+  <div class="msg" id="msg" role="alert" hidden></div>
+  <div class="note ok" id="info" role="status" hidden></div>
+
+  <div class="view" id="vPlan" hidden></div>
+  <div class="view" id="vCmp" hidden></div>
+
+  <div class="view" id="vAdh">
+  <div class="note" id="note" hidden></div>
+
+  <section class="card editor" id="editor" hidden>
+    <div class="sechead">
+      <div><h2>Plan mensual y reglas</h2><p class="sub" id="planLabel"></p></div>
+      <button type="button" class="quiet" id="resetPlan">Restablecer el plan original</button>
+    </div>
+    <p class="sub" style="max-width:75ch">Para cambiar el plan completo, carga el Excel "Meta OWD" con el mismo botón "Cargar Excel": el tablero reconoce si el archivo es el plan o el reporte. También puedes corregir una meta aquí.</p>
+    <div class="scroll"><table class="matrix" id="matrix"></table></div>
+    <div class="rules">
+      <label for="divSel">Meta semanal
+        <select id="divSel">
+          <option value="4">Meta mensual ÷ 4</option>
+          <option value="5">Meta mensual ÷ 5</option>
+          <option value="auto">Meta mensual ÷ semanas del mes</option>
+        </select>
+      </label>
+      <label for="capChk"><input type="checkbox" id="capChk"> Limitar cada meta a 100 %</label>
+    </div>
+    <div id="evalBox" hidden>
+      <span class="lbl">Responsable de cada evaluador</span>
+      <p class="sub" style="margin-top:4px;max-width:75ch">Cada DTO cuenta para la meta del responsable asignado a quien lo hizo. Si la posición del reporte no coincide con el plan, cámbiala aquí.</p>
+      <div class="maprow" id="evalList"></div>
+    </div>
+  </section>
+
+  <section id="empty" style="display:flex;flex-direction:column;gap:22px">
+    <div class="drop" id="drop">
+      <h2>Arrastra aquí el Excel del reporte OWD</h2>
+      <p class="sub">El archivo se lee en tu navegador y no se sube a ningún servidor. Debe traer las columnas Evaluador, Evaluado, Fecha evaluación, Proceso y Actividad, como la hoja "Data OWD". También puedes soltar aquí el Excel "Meta OWD" para cambiar el plan, o un planificador semanal para compararlo.</p>
+      <label class="btn pri" for="fileIn">Elegir archivo</label>
+    </div>
+    <div class="card">
+      <span class="lbl">Plan mensual que se va a medir</span>
+      <p class="sub" id="planLabel2" style="margin-top:2px"></p>
+      <div class="scroll" style="margin-top:10px"><table id="planPrev"></table></div>
+    </div>
+  </section>
+
+  <main id="dash" hidden style="display:flex;flex-direction:column;gap:22px">
+    <div class="sechead">
+      <h2>Adherencia al plan mensual</h2>
+      <div class="legend" id="legend"></div>
+    </div>
+    <section class="month">
+      <div class="card hero" id="hero"></div>
+      <div class="card" id="respChart"></div>
+    </section>
+    <section class="card" id="procChart"></section>
+
+    <div class="sechead">
+      <h2>Adherencia por semana</h2>
+      <div class="seg" id="areaSeg" role="group" aria-label="Responsable"></div>
+    </div>
+    <section class="weekgrid">
+      <div class="card chart" id="weekChart"></div>
+      <div class="card"><div class="scroll" id="weekTable"></div></div>
+    </section>
+
+    <div class="sechead">
+      <h2>Adherencia por indicador</h2>
+      <span class="sub" id="indNote"></span>
+    </div>
+    <section class="card"><div class="scroll" id="indTable"></div></section>
+
+    <div class="sechead">
+      <div><h2>DTO por persona</h2><p class="sub" id="pplNote"></p></div>
+      <div class="tools">
+        <label class="vh" for="personQ">Buscar persona</label>
+        <input type="search" id="personQ" placeholder="Buscar persona o proceso">
+        <button type="button" id="pplToggle">Abrir todas</button>
+      </div>
+    </div>
+    <section class="card"><div class="scroll" id="pplTable"></div></section>
+
+    <section class="notes" id="notes"></section>
+  </main>
+  </div>
+</div>
+<div id="tip" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+(function(){
+'use strict';
+/* Plan "Meta OWD": DC Bavaro, septiembre 2026. Columnas = responsables, filas = procesos. */
+var DEFAULT_PLAN = {
+  cd:'DC Bavaro', mes:9, year:2026,
+  resp:['Analista De Control','Gerente De Operaciones','Lider Cd Fleet','Lider Cd Safety','Supervisor De Almacén','Supervisor De Distribución'],
+  procs:[
+    ['Bloqueo de PNC',[4,0,0,0,4,0]],
+    ['Calibración de neumáticos',[0,0,4,0,0,0]],
+    ['Cargado de T2',[4,1,0,4,4,0]],
+    ['Descarga de T1',[0,0,0,0,4,0]],
+    ['Devoluciones de entrega',[0,4,0,0,0,8]],
+    ['Dispensado de Diesel',[0,0,4,4,0,0]],
+    ['Dispensado de GLP',[0,0,0,4,4,0]],
+    ['Ejecución de la entrega',[0,4,0,2,0,8]],
+    ['Manejo de cilindro de gas comprimido',[0,0,0,0,4,0]],
+    ['Mantenimiento preventivo',[0,0,2,0,0,0]],
+    ['Medición de llantas',[0,0,2,0,0,0]],
+    ['Post Ruta',[0,1,0,0,0,8]],
+    ['Prevención de violencia',[0,0,0,0,0,4]],
+    ['Proceso de picking',[4,0,0,0,4,0]],
+    ['Reempaque',[0,0,0,2,4,0]],
+    ['Rendimiento de Combustible',[0,0,4,0,0,0]],
+    ['Salida de Rutas',[0,1,0,0,0,8]],
+    ['Sorting-Refugo',[0,0,0,0,4,0]],
+    ['Toma de Inventarios',[4,2,0,0,0,0]]
+  ]
+};
+var MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+var MES3 = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+var KEY = 'adherencia-owd-v2';
+var DAY = 86400000;
+
+function clonePlan(p){ return {cd:p.cd||'', mes:p.mes||null, year:p.year||null, resp:p.resp.slice(), procs:p.procs.map(function(x){ return Array.isArray(x)?{name:x[0],metas:x[1].slice()}:{name:x.name,metas:x.metas.slice()}; })}; }
+/* Freyky evalúa como Analista De Control aunque el reporte diga "analista de inventario". Se puede cambiar en "Plan y reglas". */
+var DEFAULT_MAP = {'freyky reyes mercedes':'analista de control'};
+function defMap(){ return Object.assign({}, DEFAULT_MAP); }
+var S = {plan:clonePlan(DEFAULT_PLAN), div:'4', cap:true, map:defMap(), evals:[], fileName:'', agency:'', month:null, area:'all', open:{}, q:'',
+  view:'adh', plans:[], planId:null, cmpF:'all'};
+
+function $(id){ return document.getElementById(id); }
+function esc(s){ return String(s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+function clean(v){ return String(v==null?'':v).replace(/["“”]/g,'').replace(/\s+/g,' ').trim(); }
+function norm(v){ return clean(v).normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase(); }
+function dn(y,m,d){ return Math.round(Date.UTC(y,m-1,d)/DAY); }
+function parts(n){ var t=new Date(n*DAY); return {y:t.getUTCFullYear(), m:t.getUTCMonth()+1, d:t.getUTCDate(), wd:(t.getUTCDay()+6)%7}; }
+function isoWeek(n){ var p=parts(n), thu=n-p.wd+3, y=parts(thu).y; return Math.floor((thu-dn(y,1,1))/7)+1; }
+function weeksOfMonth(y,m){
+  var first=dn(y,m,1), last=dn(m===12?y+1:y, m===12?1:m+1, 1)-1, out=[];
+  for(var mon=first+((7-parts(first).wd)%7); mon<=last; mon+=7) out.push({start:mon, end:mon+6, n:isoWeek(mon)});
+  return out;
+}
+function rangeLabel(a,b){ var p=parts(a), q=parts(b); return p.m===q.m ? p.d+'–'+q.d+' '+MES3[q.m-1] : p.d+' '+MES3[p.m-1]+'–'+q.d+' '+MES3[q.m-1]; }
+function fmtN(x){ return Math.abs(x-Math.round(x))<1e-9 ? String(Math.round(x)) : x.toFixed(2).replace(/0+$/,''); }
+function pct(p){ return p==null ? '—' : Math.round(p*100)+' %'; }
+function status(p){ return p==null ? 'none' : p>=0.99999 ? 'good' : p>=0.7 ? 'warn' : 'crit'; }
+var ST = {good:['✓','Cumple'], warn:['!','Parcial'], crit:['✕','Bajo'], none:['–','Sin meta']};
+function chip(p,txt){ var s=typeof p==='string'?p:status(p); return '<span class="chip s-'+s+'"><i aria-hidden="true">'+ST[s][0]+'</i>'+(txt||ST[s][1])+'</span>'; }
+function planLabel(){ var P=S.plan, a=[]; if(P.cd) a.push(P.cd); if(P.mes&&P.year) a.push(MESES[P.mes-1]+' de '+P.year); return a.length?'Plan de '+a.join(' · '):'Plan sin mes indicado'; }
+
+/* ---------- Persistencia (solo comodidad de este navegador) ---------- */
+function save(){
+  try{ localStorage.setItem(KEY, JSON.stringify({plan:S.plan, div:S.div, cap:S.cap, map:S.map, fileName:S.fileName, agency:S.agency, month:S.month, area:S.area,
+    view:S.view, plans:S.plans, planId:S.planId,
+    evals:S.evals.map(function(e){ return [e.ev,e.pos,e.proc,e.act,e.evd,e.evdPos,e.type,e.y,e.m,e.d,e.hm,e.n,e.fails]; })})); }catch(_){}
+}
+function load(){
+  try{
+    var o=JSON.parse(localStorage.getItem(KEY)||'null'); if(!o) return;
+    if(o.plan && Array.isArray(o.plan.resp) && Array.isArray(o.plan.procs) && o.plan.resp.length) S.plan=clonePlan(o.plan);
+    if(o.div) S.div=o.div; if(typeof o.cap==='boolean') S.cap=o.cap;
+    S.map=Object.assign(defMap(), o.map||{}); S.fileName=o.fileName||'';
+    if(Array.isArray(o.plans)) S.plans=o.plans.filter(function(p){ return p && Array.isArray(p.secs) && typeof p.week==='number'; });
+    S.planId=o.planId||null; if(o.view==='adh'||o.view==='plan'||o.view==='cmp') S.view=o.view; S.agency=o.agency||''; S.month=o.month||null; S.area=o.area||'all';
+    S.evals=(o.evals||[]).map(function(a){ return {ev:a[0],pos:a[1],proc:a[2],act:a[3],evd:a[4],evdPos:a[5],type:a[6],y:a[7],m:a[8],d:a[9],hm:a[10],n:a[11],fails:a[12]||[],dn:dn(a[7],a[8],a[9])}; });
+  }catch(_){}
+}
+
+/* ---------- Lectura de los Excel ---------- */
+function parseDate(v){
+  if(v==null||v==='') return null;
+  if(typeof v==='number' && isFinite(v)){
+    var c=XLSX.SSF.parse_date_code(v); if(!c||!c.y) return null;
+    return {y:c.y,m:c.m,d:c.d,hm:(c.H<10?'0':'')+c.H+':'+(c.M<10?'0':'')+c.M,k:c.y+'-'+c.m+'-'+c.d+' '+c.H+':'+c.M+':'+Math.floor(c.S||0)};
+  }
+  var s=String(v).trim(), t=(s.match(/(\d{1,2}):(\d{2})/)||[]), hm=t.length?(t[1].length<2?'0':'')+t[1]+':'+t[2]:'';
+  var m=s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+  if(m) return {y:+m[1],m:+m[2],d:+m[3],hm:hm,k:s};
+  m=s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
+  if(m) return {y:+m[3],m:+m[2],d:+m[1],hm:hm,k:s};
+  return null;
+}
+function sheetRows(wb){ return wb.SheetNames.map(function(n){ return XLSX.utils.sheet_to_json(wb.Sheets[n],{header:1,raw:true,defval:''}); }); }
+function findData(all){
+  for(var s=0;s<all.length;s++) for(var i=0;i<Math.min(all[s].length,20);i++){
+    var h=(all[s][i]||[]).map(norm);
+    if(h.indexOf('proceso')>=0 && h.some(function(x){ return x.indexOf('fecha')===0; })) return {rows:all[s],i:i,h:h};
+  }
+  return null;
+}
+function findPlan(all){
+  for(var s=0;s<all.length;s++) for(var i=0;i<Math.min(all[s].length,20);i++){
+    var h=(all[s][i]||[]).map(norm);
+    if(h[0]==='responsable' || (h[0]==='proceso' && h.length>2 && h.slice(1).some(function(x){ return x && x!=='meta' && x!=='total'; }))) return {rows:all[s],i:i,h:h};
+  }
+  return null;
+}
+function parsePlan(f){
+  var head=f.rows[f.i], cols=[], resp=[];
+  for(var c=1;c<head.length;c++){ var nm=clean(head[c]); if(nm && norm(nm)!=='total' && norm(nm)!=='meta'){ cols.push(c); resp.push(nm); } }
+  if(!resp.length) throw new Error('El plan no trae columnas de responsables.');
+  var procs=[], cd='', mes=null, year=null;
+  for(var r=f.i+1;r<f.rows.length;r++){
+    var row=f.rows[r]||[], a=clean(row[0]), k=norm(a);
+    if(/applied filters|filtros aplicados/.test(k) || /\b(cd|mes|year|ano) (is|es) /.test(k)){
+      var txt=String(row[0]), m1=txt.match(/CD\s+(?:is|es)\s+(.+)/i), m2=txt.match(/Mes\s+(?:is|es)\s+(\d+)/i), m3=txt.match(/(?:Year|Año|Ano)\s+(?:is|es)\s+(\d{4})/i);
+      if(m1) cd=clean(m1[1]); if(m2) mes=+m2[1]; if(m3) year=+m3[1];
+      continue;
+    }
+    if(!a || k==='proceso' || k==='total') continue;
+    var metas=cols.map(function(c){ var v=+row[c]; return isFinite(v)&&v>0?v:0; });
+    procs.push({name:a,metas:metas});
+  }
+  if(!procs.length) throw new Error('El plan no trae procesos con metas.');
+  return {cd:cd,mes:(mes>=1&&mes<=12)?mes:null,year:year,resp:resp,procs:procs};
+}
+function parseData(found){
+  var h=found.h, cP=h.indexOf('proceso'), cF=h.indexOf('fecha evaluacion');
+  if(cF<0) cF=h.findIndex(function(x){ return x.indexOf('fecha')===0; });
+  var cE=h.indexOf('evaluador'), cPos=h.indexOf('posicion evaluador'), cEv=h.indexOf('evaluado'), cEvP=h.indexOf('posicion'), cPu=h.indexOf('puntuacion'),
+      cAg=h.indexOf('agencia'), cAc=h.indexOf('actividad'), cTa=h.indexOf('tarea'), cDe=h.indexOf('descripcion'), cTy=h.indexOf('type'); if(cTy<0) cTy=h.indexOf('tipo');
+  var map=new Map(), ag={}, bad=0;
+  function g(row,c){ return c>=0 ? clean(row[c]) : ''; }
+  for(var r=found.i+1; r<found.rows.length; r++){
+    var row=found.rows[r]; if(!row) continue;
+    var proc=g(row,cP); if(!proc) continue;
+    var f=parseDate(row[cF]); if(!f){ bad++; continue; }
+    var ev=g(row,cE), evd=g(row,cEv), key=norm(ev)+'|'+norm(evd)+'|'+f.k+'|'+norm(proc), e=map.get(key);
+    if(!e){ e={ev:ev,pos:g(row,cPos),proc:proc,act:g(row,cAc),evd:evd,evdPos:g(row,cEvP),type:g(row,cTy),y:f.y,m:f.m,d:f.d,hm:f.hm,dn:dn(f.y,f.m,f.d),n:0,fails:[],seen:{}}; map.set(key,e); }
+    var ta=g(row,cTa), tk=norm(ta)+'|'+norm(g(row,cDe))+'|'+(cPu>=0?norm(row[cPu]):'');
+    if(!ta || !e.seen[tk]){ e.seen[tk]=1; e.n++; if(cPu>=0 && norm(row[cPu])==='no ok') e.fails.push(ta||'(sin nombre)'); }
+    if(!e.pos) e.pos=g(row,cPos); if(!e.evdPos) e.evdPos=g(row,cEvP);
+    if(cAg>=0 && row[cAg]) ag[row[cAg]]=(ag[row[cAg]]||0)+1;
+  }
+  var evals=Array.from(map.values()); evals.forEach(function(e){ delete e.seen; });
+  if(!evals.length) throw new Error('El archivo no trae evaluaciones con fecha y proceso.');
+  var agency=Object.keys(ag).sort(function(a,b){ return ag[b]-ag[a]; });
+  return {evals:evals, agency:agency.length>1?agency[0]+' y '+(agency.length-1)+' más':(agency[0]||''), bad:bad};
+}
+function readFile(file){
+  return new Promise(function(res){
+    var fr=new FileReader();
+    fr.onerror=function(){ res('No pude leer "'+file.name+'". Intenta cargarlo de nuevo.'); };
+    fr.onload=function(){
+      try{
+        if(typeof XLSX==='undefined') throw new Error('No se cargó el lector de Excel. Revisa tu conexión y recarga la página.');
+        var all=sheetRows(XLSX.read(new Uint8Array(fr.result),{type:'array'})), pw=findPlanner(all), d=findData(all), p=(d||pw)?null:findPlan(all), msgs=[];
+        /* Un mismo libro puede traer el planificador y la data (como "Libro1"): se leen los dos. */
+        if(pw){ var got=importPlanner(pw); infos.push('Se cargó el planificador: '+got.join(', ')+'.'); planLoaded=true; }
+        if(d){ var out=parseData(d); S.evals=out.evals; S.fileName=file.name; S.agency=out.agency; S.month=null; S.open={}; if(out.bad) msgs.push('Se omitieron '+out.bad+' filas sin fecha válida.'); }
+        else if(p){ S.plan=parsePlan(p); S.area='all'; }
+        if(!pw && !d && !p) throw new Error('No reconocí "'+file.name+'". El reporte debe traer las columnas "Proceso" y "Fecha evaluación"; el plan, una fila "Responsable" y una columna "Proceso"; el planificador, las columnas "DTO", "Persona a evaluada" y "Evaluador".');
+        res(msgs.join(' '));
+      }catch(err){ res(err.message||String(err)); }
+    };
+    fr.readAsArrayBuffer(file);
+  });
+}
+function readFiles(list){
+  var files=Array.prototype.slice.call(list||[]); if(!files.length) return;
+  var msgs=[]; infos=[]; planLoaded=false;
+  files.reduce(function(p,f){ return p.then(function(){ return readFile(f); }).then(function(m){ if(m) msgs.push(m); }); }, Promise.resolve())
+    .then(function(){ showMsg(msgs.join(' ')); showInfo(infos.join(' ')); if(planLoaded) S.view='cmp'; save(); render(); });
+}
+var infos=[], planLoaded=false;
+function showMsg(t){ var m=$('msg'); m.textContent=t||''; m.hidden=!t; }
+function showInfo(t){ var m=$('info'); m.textContent=t||''; m.hidden=!t; }
+
+/* ---------- Cálculo ---------- */
+function procIndexer(){
+  var PI={}; S.plan.procs.forEach(function(p,i){ PI[norm(p.name)]=i; });
+  return function(e){ var i=PI[norm(e.act)]; if(i===undefined) i=PI[norm(e.proc)]; return i===undefined?-1:i; };
+}
+/* Responsable de cada evaluador: elección manual, luego posición del reporte, luego el responsable cuyo plan coincide más con lo que evaluó. */
+function evaluators(pidx){
+  var P=S.plan, by={}, rn=P.resp.map(norm);
+  S.evals.forEach(function(e){
+    var k=norm(e.ev)||'(sin nombre)', o=by[k]||(by[k]={key:k,name:e.ev||'(sin nombre)',pos:'',ov:P.resp.map(function(){ return 0; }),c:{},n:0,nm:0});
+    if(!o.pos&&e.pos) o.pos=e.pos; o.n++;
+    var pi=pidx(e); if(pi>=0){ var ck=e.y+'-'+e.m+'|'+pi; o.c[ck]=(o.c[ck]||0)+1; }
+  });
+  Object.keys(by).forEach(function(k){
+    var o=by[k], pm=rn.indexOf(norm(o.pos)), best=0;
+    /* Puntaje: cuántos de sus DTO contarían para la meta de cada responsable, mes por mes. */
+    Object.keys(o.c).forEach(function(ck){ var pi=+ck.split('|')[1]; P.resp.forEach(function(_,r){ o.ov[r]+=Math.min(o.c[ck], +P.procs[pi].metas[r]||0); }); });
+    o.ov.forEach(function(v,i){ if(v>o.ov[best]) best=i; });
+    o.posMatch=pm;
+    var man=(k in S.map) ? (S.map[k]==='' ? -1 : rn.indexOf(S.map[k])) : -2;
+    if(man>=0 || (man===-1 && S.map[k]==='')){ o.r=man; o.how=DEFAULT_MAP[k]===S.map[k]?'def':'manual'; }
+    else if(pm>=0 && (o.ov[pm]>0 || o.ov[best]===0)){ o.r=pm; o.how='pos'; }
+    else if(o.ov[best]>0){ o.r=best; o.how='inf'; }
+    else { o.r=-1; o.how='none'; }
+  });
+  return by;
+}
+function months(){ var s={}; S.evals.forEach(function(e){ s[e.y+'-'+(e.m<10?'0':'')+e.m]=1; }); return Object.keys(s).sort(); }
+function compute(){
+  var P=S.plan, ym=S.month.split('-'), y=+ym[0], m=+ym[1];
+  var lastDay=S.evals.reduce(function(a,e){ return Math.max(a,e.dn); }, -1e9);
+  var allWeeks=weeksOfMonth(y,m), weeks=allWeeks.filter(function(w){ return w.start<=lastDay; });
+  var divisor=S.div==='auto' ? Math.max(1,allWeeks.length) : +S.div;
+  var pidx=procIndexer(), EV=evaluators(pidx);
+  function cell(name,meta){ return {name:name,plan:meta,meta:meta/divisor,real:0,wk:weeks.map(function(){ return 0; })}; }
+  var grid=P.resp.map(function(_,r){ return P.procs.map(function(p){ return cell(p.name,+p.metas[r]||0); }); });
+  var out={}, outN=0, monthN=0, lead=0, firstMon=allWeeks.length?allWeeks[0].start:1e9, ppl={};
+  S.evals.forEach(function(e){
+    var inMonth=e.y===y&&e.m===m, wi=-1;
+    for(var i=0;i<weeks.length;i++) if(e.dn>=weeks[i].start&&e.dn<=weeks[i].end){ wi=i; break; }
+    if(!inMonth && wi<0) return;
+    var o=EV[norm(e.ev)||'(sin nombre)'], r=o.r, pi=pidx(e), ok=r>=0&&pi>=0&&grid[r][pi].plan>0;
+    if(inMonth){
+      monthN++; o.nm++; if(e.dn<firstMon) lead++;
+      if(!ok){ var k=(pi>=0?P.procs[pi].name:(e.act||e.proc))+'|'+(r>=0?P.resp[r]:'Sin responsable'); out[k]=(out[k]||0)+1; outN++; }
+      var pk=norm(e.evd)||'(sin nombre)', pp=ppl[pk]||(ppl[pk]={key:pk,name:e.evd||'(sin nombre)',pos:'',list:[],bad:0,last:0});
+      if(!pp.pos&&e.evdPos) pp.pos=e.evdPos;
+      pp.list.push({e:e, pname:pi>=0?P.procs[pi].name:(e.act||e.proc), resp:r>=0?P.resp[r]:'', inPlan:ok});
+      if(e.fails.length) pp.bad++; if(e.dn>pp.last) pp.last=e.dn;
+    }
+    if(!ok) return;
+    var c=grid[r][pi];
+    if(inMonth) c.real++;
+    if(wi>=0) c.wk[wi]++;
+  });
+  function roll(items){
+    var R={plan:0,real:0,cnt:0,wk:weeks.map(function(){ return {real:0,meta:0,cnt:0}; })};
+    items.forEach(function(it){
+      R.plan+=it.plan; R.real+=it.real; R.cnt+=S.cap?Math.min(it.real,it.plan):it.real;
+      it.p=it.plan>0 ? (S.cap?Math.min(it.real,it.plan):it.real)/it.plan : null;
+      it.wk.forEach(function(v,i){ R.wk[i].real+=v; R.wk[i].meta+=it.meta; R.wk[i].cnt+=S.cap?Math.min(v,it.meta):v; });
+    });
+    R.p=R.plan>0?R.cnt/R.plan:null;
+    R.wk.forEach(function(w){ w.p=w.meta>0?w.cnt/w.meta:null; });
+    return R;
+  }
+  var all=[];
+  var areas=P.resp.map(function(name,r){ var items=grid[r].filter(function(c){ return c.plan>0; }); all=all.concat(items); return {id:'r'+r,name:name,items:items,roll:roll(items)}; });
+  var procs=P.procs.map(function(p,i){ var items=grid.map(function(g){ return g[i]; }).filter(function(c){ return c.plan>0; }); return {name:p.name,roll:roll(items),n:items.length}; }).filter(function(p){ return p.n>0; });
+  var people=Object.keys(ppl).map(function(k){ var p=ppl[k]; p.list.sort(function(a,b){ return a.e.dn-b.e.dn || (a.e.hm<b.e.hm?-1:1); }); return p; })
+    .sort(function(a,b){ return b.list.length-a.list.length || a.name.localeCompare(b.name,'es'); });
+  return {y:y,m:m,weeks:weeks,divisor:divisor,areas:areas,procs:procs,total:roll(all),out:out,outN:outN,monthN:monthN,lead:lead,people:people,
+    evs:Object.keys(EV).map(function(k){ return EV[k]; }).filter(function(o){ return o.nm>0; }).sort(function(a,b){ return b.nm-a.nm; })};
+}
+
+/* ---------- Render ---------- */
+function meter(p){ var s=status(p); return '<div class="meter s-'+s+'"><i style="width:'+(p==null?0:Math.min(100,Math.max(0,p*100))).toFixed(1)+'%"></i></div>'; }
+function wkCell(real,meta,p,label,small,cnt){
+  var s=meta>0?status(p):'none', show=cnt==null?real:cnt;
+  var tip=label+'\nRealizados: '+real+(cnt!=null&&Math.abs(cnt-real)>1e-9?' · Cuentan: '+fmtN(cnt):'')+' · Meta: '+fmtN(meta)+'\nAdherencia: '+pct(p);
+  return '<td class="wk s-'+s+'" data-tip="'+esc(tip)+'"><span>'+(small?pct(p)+'<small>'+fmtN(show)+'/'+fmtN(meta)+'</small>':fmtN(show)+'/'+fmtN(meta))+'</span></td>';
+}
+function hbars(title,rows,top){
+  var h='<span class="lbl">'+title+'</span><div class="hbars">';
+  rows.forEach(function(x){
+    var r=x.roll, w=r.p==null?0:Math.min(top,r.p*100)/top*100;
+    h+='<div class="hrow s-'+status(r.p)+'" tabindex="0" data-tip="'+esc(x.name+'\nRealizados: '+r.real+(r.real!==r.cnt?' · Cuentan: '+fmtN(r.cnt):'')+' · Meta: '+r.plan+'\nAdherencia: '+pct(r.p)+' · '+ST[status(r.p)][1])+'">'+
+      '<span class="hl">'+esc(x.name)+'</span><div class="ht"><i style="width:'+w.toFixed(1)+'%"></i>'+(top>100?'<u style="left:'+(100/top*100).toFixed(2)+'%"></u>':'')+'</div>'+
+      '<span class="hv"><strong>'+pct(r.p)+'</strong><small>'+fmtN(r.cnt)+'/'+r.plan+'</small></span></div>';
+  });
+  return h+'</div><div class="haxis"><span></span><div><span>0 %</span><span>'+(top>100?top+' %':'100 % = meta')+'</span></div><span></span></div>';
+}
+function planTable(editable){
+  var P=S.plan, tot=P.resp.map(function(_,r){ return P.procs.reduce(function(s,p){ return s+(+p.metas[r]||0); },0); }), g=tot.reduce(function(a,b){ return a+b; },0);
+  var h='<thead><tr><th>Proceso</th>'+P.resp.map(function(r){ return '<th class="r">'+esc(r)+'</th>'; }).join('')+'<th class="r">Total</th></tr></thead><tbody>';
+  P.procs.forEach(function(p,i){
+    var s=p.metas.reduce(function(a,b){ return a+(+b||0); },0);
+    h+='<tr><td>'+esc(p.name)+'</td>'+p.metas.map(function(v,r){
+      return '<td class="r">'+(editable?'<input type="number" min="0" step="1" id="pm-'+i+'-'+r+'" data-p="'+i+'" data-r="'+r+'" aria-label="'+esc(p.name+', '+P.resp[r])+'" value="'+(+v||'')+'">':(+v?+v:''))+'</td>'; }).join('')+'<td class="r"><strong>'+s+'</strong></td></tr>';
+  });
+  return h+'<tr class="area"><td>Total</td>'+tot.map(function(t){ return '<td class="r">'+t+'</td>'; }).join('')+'<td class="r">'+g+'</td></tr></tbody>';
+}
+var R=null;
+function render(){
+  Array.prototype.forEach.call(document.querySelectorAll('.tabs button'), function(b){ b.setAttribute('aria-selected', String(b.dataset.view===S.view)); });
+  $('vAdh').hidden=S.view!=='adh'; $('vPlan').hidden=S.view!=='plan'; $('vCmp').hidden=S.view!=='cmp';
+  $('planBtn').hidden=S.view!=='adh';
+  $('fileBtn').textContent=S.evals.length?'Cargar otro Excel':'Cargar Excel';
+  if(S.view==='adh') renderAdh(); else $('monthSel').hidden=true;
+  if(S.view==='plan') renderPlanner();
+  if(S.view==='cmp') renderCmp();
+}
+function renderAdh(){
+  var has=S.evals.length>0, ed=!$('editor').hidden;
+  $('planLabel').textContent=planLabel(); $('planLabel2').textContent=planLabel();
+  if(ed){ $('divSel').value=S.div; $('capChk').checked=S.cap; $('matrix').innerHTML=planTable(true); }
+  $('empty').hidden=has; $('dash').hidden=!has; $('monthSel').hidden=!has;
+  $('fileBtn').textContent=has?'Cargar otro Excel':'Cargar Excel';
+  $('empty').style.display=has?'none':'flex'; $('dash').style.display=has?'flex':'none';
+  if(!has){
+    $('subtitle').textContent='Carga el reporte "Data OWD" para medir el mes contra el plan.';
+    $('planPrev').innerHTML=planTable(false); $('evalBox').hidden=true; $('note').hidden=true; return;
+  }
+  var ms=months(); if(!S.month||ms.indexOf(S.month)<0) S.month=ms[ms.length-1];
+  $('monthSel').innerHTML=ms.map(function(k){ var p=k.split('-'); return '<option value="'+k+'"'+(k===S.month?' selected':'')+'>'+MESES[+p[1]-1]+' '+p[0]+'</option>'; }).join('');
+  R=compute();
+  if(S.area!=='all' && !R.areas.some(function(a){ return a.id===S.area; })) S.area='all';
+  var T=R.total, mesTxt=MESES[R.m-1]+' de '+R.y, P=S.plan;
+  $('subtitle').textContent=[S.agency, mesTxt, S.fileName].filter(Boolean).join(' · ');
+  var mism=P.mes&&P.year&&(P.mes!==R.m||P.year!==R.y);
+  $('note').hidden=!mism;
+  if(mism) $('note').textContent='El plan cargado es de '+MESES[P.mes-1]+' de '+P.year+' y los datos son de '+mesTxt+'. La adherencia se calcula con ese plan; si el mes tenía otras metas, carga su Excel "Meta OWD".';
+
+  /* Resumen y gráfica mensual */
+  $('legend').innerHTML=chip('good','Cumple: 100 % o más')+chip('warn','Parcial: desde 70 %')+chip('crit','Bajo: menos de 70 %');
+  var extra=R.areas.reduce(function(s,a){ return s+a.items.reduce(function(q,i){ return q+Math.max(0,i.real-i.plan); },0); },0);
+  $('hero').innerHTML='<span class="lbl">Total del mes</span><div class="big">'+pct(T.p)+'</div>'+meter(T.p)+'<div>'+chip(T.p)+'</div>'+
+    '<div class="facts num"><span><strong>'+fmtN(T.cnt)+'</strong> de '+T.plan+' DTO del plan</span><span>'+R.monthN+' realizados en el mes</span>'+
+    (extra&&S.cap?'<span>'+extra+' por encima de su meta</span>':'')+(R.outN?'<span>'+R.outN+' fuera del plan</span>':'')+'<span>'+R.people.length+' personas evaluadas</span></div>';
+  var mx=0; R.areas.concat(R.procs).forEach(function(x){ if(x.roll.p>mx) mx=x.roll.p; });
+  var top=mx>1 ? Math.ceil(mx*100/50)*50 : 100;
+  $('respChart').innerHTML=hbars('Por responsable · % de la meta mensual', R.areas, top);
+  $('procChart').innerHTML=hbars('Por proceso · % de la meta mensual', R.procs.slice().sort(function(a,b){ return (b.roll.p||0)-(a.roll.p||0) || a.name.localeCompare(b.name,'es'); }), top);
+
+  /* Filtro por responsable */
+  $('areaSeg').innerHTML=[{id:'all',name:'Todos'}].concat(R.areas).map(function(a){
+    return '<button type="button" data-area="'+a.id+'" aria-pressed="'+(S.area===a.id)+'">'+esc(a.name)+'</button>'; }).join('');
+  var sel=R.areas.filter(function(a){ return a.id===S.area; })[0], scope=sel?sel.roll:T, scopeName=sel?sel.name:'Todos los responsables';
+
+  /* Semanas */
+  var W=R.weeks;
+  if(!W.length){
+    $('weekChart').innerHTML='<span class="lbl">'+esc(scopeName)+'</span><p class="sub">Todavía no hay una semana que empiece en '+mesTxt+' con datos en el archivo.</p>';
+    $('weekTable').innerHTML='';
+  }else{
+    var wmx=Math.max(1, Math.max.apply(null, scope.wk.map(function(w){ return w.p||0; })));
+    var wtop=Math.ceil(wmx*100/50)*50, ticks=[]; for(var t=0;t<=wtop;t+=50) ticks.push(t);
+    $('weekChart').innerHTML='<span class="lbl">'+esc(scopeName)+' · % de la meta semanal</span><div class="plot">'+
+      ticks.map(function(t){ return '<div class="grid" style="bottom:'+(t/wtop*100)+'%"><span>'+t+'</span></div>'; }).join('')+
+      '<div class="cols">'+scope.wk.map(function(w,i){
+        var hh=(w.p||0)*100/wtop*100, lab='S'+W[i].n+' · '+rangeLabel(W[i].start,W[i].end);
+        return '<div class="col" tabindex="0" data-tip="'+esc(lab+'\nRealizados: '+w.real+(Math.abs(w.cnt-w.real)>1e-9?' · Cuentan: '+fmtN(w.cnt):'')+' · Meta: '+fmtN(w.meta)+'\nAdherencia: '+pct(w.p))+'"><b style="height:'+hh.toFixed(2)+'%"></b><em style="bottom:'+hh.toFixed(2)+'%">'+pct(w.p)+'</em></div>';
+      }).join('')+'</div></div><div class="xlab">'+W.map(function(w){ return '<div><strong>S'+w.n+'</strong><small>'+rangeLabel(w.start,w.end)+'</small></div>'; }).join('')+'</div>';
+    var th='<table><thead><tr><th>Responsable</th>'+W.map(function(w){ return '<th class="c">S'+w.n+'<small>'+rangeLabel(w.start,w.end)+'</small></th>'; }).join('')+'<th class="r">Mes</th></tr></thead><tbody>';
+    R.areas.concat([{id:'all',name:'Total',roll:T}]).forEach(function(a){
+      th+='<tr class="'+(a.id===S.area?'sel':'')+(a.id==='all'?' area':'')+'"><td>'+esc(a.name)+'</td>'+a.roll.wk.map(function(w,i){
+        return wkCell(w.real,w.meta,w.p,a.name+' · S'+W[i].n,true,w.cnt); }).join('')+'<td class="r"><strong>'+pct(a.roll.p)+'</strong></td></tr>';
+    });
+    $('weekTable').innerHTML=th+'</tbody></table>';
+  }
+
+  /* Por indicador */
+  var ti='<table class="ind"><thead><tr><th>Indicador</th><th>Avance del mes</th><th class="r">Real / Meta</th><th class="r">Adherencia</th><th>Estado</th>'+
+    W.map(function(w){ return '<th class="c">S'+w.n+'<small>'+rangeLabel(w.start,w.end)+'</small></th>'; }).join('')+'</tr></thead><tbody>';
+  R.areas.filter(function(a){ return S.area==='all'||a.id===S.area; }).forEach(function(a){
+    var r=a.roll;
+    ti+='<tr class="area"><td class="name">'+esc(a.name)+'</td><td class="bar">'+meter(r.p)+'</td><td class="r">'+fmtN(r.cnt)+' / '+r.plan+(r.real>r.cnt?' <span class="extra">(+'+fmtN(r.real-r.cnt)+')</span>':'')+'</td><td class="r">'+pct(r.p)+'</td><td>'+chip(r.p)+'</td>'+
+      r.wk.map(function(w,i){ return wkCell(w.real,w.meta,w.p,a.name+' · S'+W[i].n,false,w.cnt); }).join('')+'</tr>';
+    a.items.forEach(function(it){
+      var ex=it.real-it.plan;
+      ti+='<tr><td class="name">'+esc(it.name)+'</td><td class="bar">'+meter(it.p)+'</td><td class="r">'+it.real+' / '+it.plan+(ex>0?' <span class="extra">(+'+ex+')</span>':'')+'</td><td class="r">'+pct(it.p)+'</td><td>'+chip(it.p)+'</td>'+
+        it.wk.map(function(v,i){ var p=it.meta>0?(S.cap?Math.min(v,it.meta):v)/it.meta:null; return wkCell(v,it.meta,p,it.name+' · S'+W[i].n,false); }).join('')+'</tr>';
+    });
+  });
+  $('indTable').innerHTML=ti+'</tbody></table>';
+  $('indNote').textContent='Meta semanal = meta mensual ÷ '+R.divisor;
+
+  renderPeople();
+
+  /* Notas */
+  var HOW={pos:'Por la posición del reporte',inf:'Por los procesos que evaluó',manual:'Elegido a mano',def:'Asignado por defecto',none:'Sin responsable en el plan'};
+  var outKeys=Object.keys(R.out).sort(function(a,b){ return R.out[b]-R.out[a]; });
+  var n='<div class="card"><span class="lbl">Cómo se calcula</span><ul>'+
+    '<li>Un DTO es una combinación única de evaluador, evaluado, fecha y hora, y proceso. Las filas repetidas del reporte no cuentan doble.</li>'+
+    '<li>El proceso del plan se busca en la columna "Actividad" del reporte, y cada DTO cuenta para la meta del responsable de quien lo hizo.</li>'+
+    '<li>Adherencia = DTO realizados ÷ meta. Los números entre paréntesis, como (+4), están por encima de la meta.'+(S.cap?' Cada meta cuenta hasta 100 %: lo hecho de más no compensa lo que falta en otra.':' Sin límite: lo hecho de más en una meta compensa a las demás.')+'</li>'+
+    '<li>Las semanas van de lunes a domingo y pertenecen al mes en que cae su lunes. Solo se muestran las que ya tienen datos en el archivo.</li>'+
+    (R.lead?'<li>'+R.lead+' DTO de los primeros días del mes cuentan en el total mensual, pero su semana empezó el mes anterior.</li>':'')+
+    '</ul></div>';
+  n+='<div class="card"><span class="lbl">Evaluadores del mes</span><div class="scroll" style="margin-top:6px"><table><thead><tr><th style="min-width:150px">Evaluador</th><th class="r">DTO</th><th>Responsable</th></tr></thead><tbody>'+
+    R.evs.map(function(e){ return '<tr><td>'+esc(e.name)+'<br><span class="extra">'+(e.pos?'Posición: '+esc(e.pos):'Sin posición en el reporte')+'</span></td><td class="r">'+e.nm+'</td><td>'+(e.r>=0?esc(P.resp[e.r]):'—')+'<br><span class="extra">'+HOW[e.how]+'</span></td></tr>'; }).join('')+'</tbody></table></div></div>';
+  n+='<div class="card"><span class="lbl">Fuera del plan</span>'+(outKeys.length?'<div class="scroll" style="margin-top:6px"><table><thead><tr><th>Proceso</th><th>Responsable</th><th class="r">DTO</th></tr></thead><tbody>'+
+    outKeys.map(function(k){ var a=k.split('|'); return '<tr><td>'+esc(a[0])+'</td><td>'+esc(a[1])+'</td><td class="r">'+R.out[k]+'</td></tr>'; }).join('')+'</tbody></table></div><p class="sub" style="margin-top:8px">No suman a la adherencia: ese responsable no tiene meta para ese proceso.</p>':
+    '<p class="sub" style="margin-top:8px">Todos los DTO del mes corresponden a una meta del plan.</p>')+
+    '<div style="margin-top:auto;padding-top:10px"><button type="button" class="quiet" id="clearData">Quitar los datos cargados</button></div></div>';
+  $('notes').innerHTML=n;
+
+  /* Evaluadores en el editor */
+  $('evalBox').hidden=false;
+  if(ed) $('evalList').innerHTML=R.evs.map(function(e,i){
+    return '<label for="map'+i+'"><span>'+esc(e.name)+' <span class="extra">'+(e.pos?'· '+esc(e.pos):'· sin posición')+'</span></span><select id="map'+i+'" data-ev="'+esc(e.key)+'">'+
+      '<option value=""'+(e.r<0?' selected':'')+'>Sin responsable</option>'+P.resp.map(function(r,ri){ return '<option value="'+esc(norm(r))+'"'+(e.r===ri?' selected':'')+'>'+esc(r)+'</option>'; }).join('')+'</select></label>'; }).join('');
+}
+function fecha(e){ return (e.d<10?'0':'')+e.d+' '+MES3[e.m-1]+(e.hm?' · '+e.hm:''); }
+function renderPeople(){
+  if(!R) return;
+  var q=norm(S.q), list=R.people.filter(function(p){ return !q || norm(p.name).indexOf(q)>=0 || p.list.some(function(x){ return norm(x.pname).indexOf(q)>=0; }); });
+  var nd=list.reduce(function(s,p){ return s+p.list.length; },0);
+  $('pplNote').textContent=list.length+' personas · '+nd+' DTO en '+MESES[R.m-1]+'. Toca una persona para ver cada DTO.';
+  var allOpen=list.length>0 && list.every(function(p){ return S.open[p.key]; });
+  $('pplToggle').textContent=allOpen?'Cerrar todas':'Abrir todas';
+  if(!list.length){ $('pplTable').innerHTML='<p class="sub">Ninguna persona coincide con la búsqueda.</p>'; return; }
+  var h='<table class="ppl"><thead><tr><th>Persona</th><th class="r">DTO</th><th class="r">Con No OK</th><th>Procesos</th><th class="r">Último</th></tr></thead><tbody>';
+  list.forEach(function(p,i){
+    var op=!!S.open[p.key], pr={}, l=parts(p.last);
+    p.list.forEach(function(x){ pr[x.pname]=(pr[x.pname]||0)+1; });
+    h+='<tr class="p" data-k="'+esc(p.key)+'" aria-expanded="'+op+'"><td><button type="button" aria-expanded="'+op+'" aria-controls="pd'+i+'"><span>'+esc(p.name)+(p.pos?'<br><span class="extra" style="font-weight:400">'+esc(p.pos)+'</span>':'')+'</span></button></td>'+
+      '<td class="r"><strong>'+p.list.length+'</strong></td><td class="r">'+(p.bad?p.bad:'—')+'</td><td>'+Object.keys(pr).map(function(k){ return esc(k)+(pr[k]>1?' ×'+pr[k]:''); }).join(' · ')+'</td><td class="r">'+l.d+' '+MES3[l.m-1]+'</td></tr>';
+    if(op){
+      h+='<tr class="d" id="pd'+i+'"><td colspan="5"><div class="scroll"><table><thead><tr><th>Fecha</th><th>Proceso</th><th>Evaluador</th><th>Tipo</th><th class="r">Preguntas</th><th>Resultado</th></tr></thead><tbody>'+
+        p.list.map(function(x){ var e=x.e;
+          return '<tr><td style="white-space:nowrap">'+fecha(e)+'</td><td>'+esc(x.pname)+(x.inPlan?'':' <span class="tag">fuera del plan</span>')+'</td><td>'+esc(e.ev||'—')+(x.resp?'<br><span class="extra">'+esc(x.resp)+'</span>':'')+'</td><td>'+esc(e.type||'—')+'</td><td class="r">'+e.n+'</td><td>'+
+            (e.fails.length?chip('crit',e.fails.length+' No OK')+'<br><span class="extra">'+e.fails.map(esc).join(' · ')+'</span>':chip('good','Todo OK'))+'</td></tr>'; }).join('')+'</tbody></table></div></td></tr>';
+    }
+  });
+  $('pplTable').innerHTML=h+'</tbody></table>';
+}
+
+/* ---------- Planificador semanal ---------- */
+/* Catálogo de DTO: nombre en la app (columna "Proceso"), actividad (la del plan "Meta OWD") y pilar. */
+var CAT = [
+  ['Armado de cargas 2','Proceso de picking','WAREHOUSE'],
+  ['Cargado de Camiones 2','Cargado de T2','WAREHOUSE'],
+  ['Conteo de Inventarios 2','Toma de Inventarios','WAREHOUSE'],
+  ['PNC 2','Bloqueo de PNC','WAREHOUSE'],
+  ['Reempaque 2','Reempaque','WAREHOUSE'],
+  ['Sorting-refugo 2','Sorting-Refugo','WAREHOUSE'],
+  ['Transferencias (Descarga de T1) 2','Descarga de T1','WAREHOUSE'],
+  ['Verificación y confirmación de carga','Verificación de carga','WAREHOUSE'],
+  ['Devoluciones de entrega 2','Devoluciones de entrega','DISTRIBUTION'],
+  ['Ejecución de la entrega 2','Ejecución de la entrega','DISTRIBUTION'],
+  ['Post Rutas (TIV) 2','Post Ruta','DISTRIBUTION'],
+  ['Pre Ruta (TML) 2','Salida de Rutas','DISTRIBUTION'],
+  ['Dispensado de Diesel 2','Dispensado de Diesel','SAFETY'],
+  ['Dispensado de GLP 2','Dispensado de GLP','SAFETY'],
+  ['Manejo de cilindro de gas comprimido','Manejo de cilindro de gas comprimido','SAFETY'],
+  ['Prevención de Violencia 2','Prevención de violencia','SAFETY'],
+  ['Calibración de Neumáticos','Calibración de neumáticos','FLEET'],
+  ['Mantenimiento preventivo y correctivo','Mantenimiento preventivo','FLEET'],
+  ['Medición de llantas','Medición de llantas','FLEET'],
+  ['Rendimiento de Combustible','Rendimiento de Combustible','FLEET']
+];
+var PILAR = {WAREHOUSE:'WAREHOUSE', DISTRIBUTION:'Distribución', SAFETY:'Safety', FLEET:'Fleet'};
+/* Secciones del planificador, con el responsable del plan "Meta OWD" y el evaluador por defecto. */
+var SECS = [
+  {key:'alm', title:'Almacén', resp:'Supervisor De Almacén', ev:'Kervin Miguel Mercedes'},
+  {key:'dis', title:'Distribución', resp:'Supervisor De Distribución', ev:'GREGORI JHASMEL AGRAMONTE'},
+  {key:'seg', title:'Seguridad', resp:'Lider Cd Safety', ev:'JORGE RAMON REYES RAMIREZ'},
+  {key:'flo', title:'Flota', resp:'Lider Cd Fleet', ev:'CARLOS GERMAN'},
+  {key:'ges', title:'Gestión', resp:'Gerente De Operaciones', ev:'Heini Heredia Susana'},
+  {key:'con', title:'Control', resp:'Analista De Control', ev:'Freyky Reyes Mercedes'}
+];
+var HEAD = ['Centro','Fecha','Semana','Pilar','DTO','Tipo','Código','Persona a evaluada','Evaluador'];
+var CK = {};
+CAT.forEach(function(c,i){ [c[0],c[1],c[0].replace(/\s+2$/,'')].forEach(function(n){ CK[norm(n)]=i; }); });
+['Armado de productos','Verificación ítems de seguridad'].forEach(function(n){ CK[norm(n)]=7; });
+function catIdx(name){ var k=norm(name); if(!k) return -1; if(k in CK) return CK[k]; k=k.replace(/\s+2$/,''); return k in CK ? CK[k] : -1; }
+function procKey(name){ var i=catIdx(name); return i>=0 ? 'c'+i : norm(name).replace(/\s+2$/,''); }
+function evKey(e){ if(e._k===undefined){ var i=catIdx(e.proc); if(i<0) i=catIdx(e.act); e._k=i>=0?'c'+i:norm(e.proc||e.act).replace(/\s+2$/,''); } return e._k; }
+function pilarOf(r){ var i=catIdx(r.dto); return i>=0 ? PILAR[CAT[i][2]] : (r.pil||''); }
+function tipoOf(v){ var k=norm(v); return k.indexOf('reac')===0 ? 'Reactiva' : k.indexOf('prev')===0 ? 'Preventiva' : clean(v); }
+
+/* Nombres: iguales, o con todas las palabras coincidiendo salvo una letra (p. ej. "CALOS" y "Carlos"). */
+var STOP = {de:1,la:1,del:1,los:1,las:1,y:1,el:1};
+function toks(s){ return norm(s).replace(/[^a-z0-9 ]/g,' ').split(' ').filter(function(t){ return t && !STOP[t]; }); }
+function lev1(a,b){
+  if(a===b) return true; var la=a.length, lb=b.length; if(Math.abs(la-lb)>1) return false;
+  var i=0, j=0, d=0;
+  while(i<la && j<lb){ if(a[i]===b[j]){ i++; j++; continue; } if(++d>1) return false; if(la>lb) i++; else if(lb>la) j++; else { i++; j++; } }
+  return d+(la-i)+(lb-j)<=1;
+}
+var NM = {};
+function sameName(a,b){
+  var x=norm(a), y=norm(b); if(!x||!y) return false; if(x===y) return true;
+  var key=x+'|'+y; if(key in NM) return NM[key];
+  var ta=toks(a), tb=toks(b); if(ta.length>tb.length){ var t=ta; ta=tb; tb=t; }
+  var used={}, m=0;
+  ta.forEach(function(t){ for(var j=0;j<tb.length;j++){ if(used[j]) continue; var u=tb[j]; if(t===u || (t.length>=4 && u.length>=4 && lev1(t,u))){ used[j]=1; m++; return; } } });
+  return (NM[key] = ta.length>=2 && m>=2 && m>=ta.length-(ta.length>=4?1:0));
+}
+
+function mondayOf(n){ return n-parts(n).wd; }
+function todayDn(){ var t=new Date(); return dn(t.getFullYear(),t.getMonth()+1,t.getDate()); }
+function isoD(n){ var p=parts(n); return p.y+'-'+(p.m<10?'0':'')+p.m+'-'+(p.d<10?'0':'')+p.d; }
+function fromIso(s){ var m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(s||''); return m ? dn(+m[1],+m[2],+m[3]) : null; }
+function dLabel(n){ var p=parts(n); return (p.d<10?'0':'')+p.d+' '+MES3[p.m-1]; }
+function planName(pl){ return 'S'+isoWeek(pl.week)+' · '+rangeLabel(pl.week,pl.week+6)+' '+parts(pl.week+6).y; }
+function curPlan(){ for(var i=0;i<S.plans.length;i++) if(S.plans[i].id===S.planId) return S.plans[i]; var p=S.plans[0]||null; S.planId=p?p.id:null; return p; }
+function sortPlans(){ S.plans.sort(function(a,b){ return b.week-a.week || a.cd.localeCompare(b.cd,'es'); }); }
+function newPlan(week, cd, from){
+  return {id:'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), cd:cd||'DC Bavaro', week:week,
+    secs:SECS.map(function(s){ var o=from&&from.secs.filter(function(x){ return x.key===s.key; })[0]; return {key:s.key,title:s.title,resp:s.resp,ev:o?o.ev:s.ev,rows:[]}; })};
+}
+function blankRow(d){ return {d:d, dto:'', tipo:'Preventiva', cod:'', evd:'', ev:''}; }
+function planRows(pl){ return pl.secs.reduce(function(s,x){ return s+x.rows.filter(function(r){ return r.dto||r.evd; }).length; },0); }
+
+/* Personas y evaluadores conocidos, para autocompletar y detectar nombres mal escritos. */
+function roster(){
+  var p={}, v={}, dp={};
+  function add(o,name,pos){ var k=norm(name); if(!k) return; var r=o[k]||(o[k]={name:clean(name),pos:''}); if(pos&&!r.pos) r.pos=clean(pos); }
+  S.evals.forEach(function(e){ add(p,e.evd,e.evdPos); add(dp,e.evd,e.evdPos); add(v,e.ev,e.pos); });
+  SECS.forEach(function(s){ add(v,s.ev); });
+  S.plans.forEach(function(pl){ pl.secs.forEach(function(s){ add(v,s.ev); s.rows.forEach(function(r){ add(p,r.evd); add(v,r.ev); }); }); });
+  function list(o){ return Object.keys(o).map(function(k){ return o[k]; }).sort(function(a,b){ return a.name.localeCompare(b.name,'es'); }); }
+  return {people:list(p), evals:list(v), data:dp, dataList:list(dp)};
+}
+
+/* Meta semanal de la sección según el plan "Meta OWD" y la regla de "Plan y reglas". */
+function coverage(pl, sec){
+  var P=S.plan, ri=P.resp.map(norm).indexOf(norm(sec.resp)); if(ri<0) return null;
+  var p=parts(pl.week), div=S.div==='auto' ? Math.max(1,weeksOfMonth(p.y,p.m).length) : +S.div, cnt={}, out=[];
+  sec.rows.forEach(function(r){ if(!r.dto) return; var i=catIdx(r.dto), k=i>=0?norm(CAT[i][1]):norm(r.dto); cnt[k]=(cnt[k]||0)+1; });
+  P.procs.forEach(function(pr){ var k=norm(pr.name), m=(+pr.metas[ri]||0)/div; if(m>0||cnt[k]) out.push({name:pr.name,k:k,meta:m,n:cnt[k]||0}); delete cnt[k]; });
+  Object.keys(cnt).forEach(function(k){ var i=catIdx(k); out.push({name:i>=0?CAT[i][1]:k,k:k,meta:0,n:cnt[k]}); });
+  return {div:div, list:out};
+}
+function fillFromMeta(pl, si){
+  var sec=pl.secs[si], cv=coverage(pl, sec); if(!cv) return 0;
+  var empty=sec.rows.filter(function(r){ return !r.dto && !r.evd && !r.cod; }); sec.rows=sec.rows.filter(function(r){ return empty.indexOf(r)<0; });
+  var n=0;
+  cv.list.forEach(function(it){
+    var need=Math.ceil(it.meta-1e-9)-it.n, i=catIdx(it.name), dto=i>=0?CAT[i][0]:it.name;
+    for(var j=0;j<need;j++){ var r=blankRow(pl.week); r.dto=dto; sec.rows.push(r); n++; }
+  });
+  return n;
+}
+
+/* ---------- Planificador: leer y descargar Excel ---------- */
+function findPlanner(all){
+  for(var s=0;s<all.length;s++) for(var i=0;i<Math.min(all[s].length,40);i++){
+    var h=(all[s][i]||[]).map(norm);
+    if(h.indexOf('dto')>=0 && h.indexOf('evaluador')>=0 && h.some(function(x){ return x.indexOf('persona')===0 || x==='evaluado'; })) return all[s];
+  }
+  return null;
+}
+function secFromTitle(t){
+  var k=norm(t);
+  if(/almacen|warehouse/.test(k)) return 'alm'; if(/distribu/.test(k)) return 'dis'; if(/segur|safety/.test(k)) return 'seg';
+  if(/flota|fleet/.test(k)) return 'flo'; if(/gestion/.test(k)) return 'ges'; if(/control/.test(k)) return 'con';
+  return k ? 'x-'+k : 'alm';
+}
+function importPlanner(rows){
+  var title='', cols=null, items=[];
+  rows.forEach(function(row){
+    row=row||[]; var h=row.map(norm), ne=h.filter(Boolean);
+    if(ne.length===1 && ne[0].indexOf('planificador')===0){ title=clean(row[h.findIndex(Boolean)]); return; }
+    if(h.indexOf('dto')>=0 && h.indexOf('evaluador')>=0){
+      cols={cd:h.indexOf('centro'), f:h.findIndex(function(x){ return x.indexOf('fecha')===0; }), pil:h.indexOf('pilar'), dto:h.indexOf('dto'), tipo:h.indexOf('tipo'),
+        cod:h.findIndex(function(x){ return x.indexOf('codigo')===0; }), evd:h.findIndex(function(x){ return x.indexOf('persona')===0 || x==='evaluado'; }), ev:h.indexOf('evaluador'),
+        sec:secFromTitle(title), title:clean(title.replace(/^planificador( de)?( dto)?( de)?\s*/i,''))};
+      return;
+    }
+    if(!cols) return;
+    function g(c){ return c>=0 ? clean(row[c]) : ''; }
+    var dto=g(cols.dto), evd=g(cols.evd); if(!dto && !evd) return;
+    var f=cols.f>=0?parseDate(row[cols.f]):null, i=catIdx(dto);
+    items.push({sec:cols.sec, title:cols.title, cd:g(cols.cd), d:f?dn(f.y,f.m,f.d):null,
+      r:{d:null, dto:i>=0?CAT[i][0]:dto, pil:g(cols.pil), tipo:tipoOf(g(cols.tipo))||'Preventiva', cod:g(cols.cod), evd:evd, ev:g(cols.ev)}});
+  });
+  if(!items.length) throw new Error('El planificador no trae filas con DTO o persona a evaluar.');
+  /* Un plan por semana (lunes a domingo). Las filas sin fecha van a la semana más común del archivo. */
+  var wc={}; items.forEach(function(it){ if(it.d!=null){ var w=mondayOf(it.d); wc[w]=(wc[w]||0)+1; } });
+  var wk=Object.keys(wc).sort(function(a,b){ return wc[b]-wc[a]; }), fallback=wk.length?+wk[0]:mondayOf(todayDn()), byWeek={};
+  items.forEach(function(it){ var w=it.d!=null?mondayOf(it.d):fallback; it.r.d=it.d!=null?it.d:w; (byWeek[w]=byWeek[w]||[]).push(it); });
+  var names=[];
+  Object.keys(byWeek).forEach(function(w){
+    w=+w; var list=byWeek[w], cc={};
+    list.forEach(function(it){ if(it.cd) cc[it.cd]=(cc[it.cd]||0)+1; });
+    var cd=Object.keys(cc).sort(function(a,b){ return cc[b]-cc[a]; })[0]||'DC Bavaro';
+    var pl=newPlan(w, cd);
+    list.forEach(function(it){
+      var sec=pl.secs.filter(function(s){ return s.key===it.sec; })[0];
+      if(!sec){ sec={key:it.sec,title:it.title||'Otros',resp:'',ev:'',rows:[]}; pl.secs.push(sec); }
+      sec.rows.push(it.r);
+    });
+    /* El evaluador de la sección es el más frecuente del archivo; si no trae, queda el de siempre (Control: Freyky). */
+    pl.secs.forEach(function(sec){
+      var ec={}; sec.rows.forEach(function(r){ if(r.ev) ec[r.ev]=(ec[r.ev]||0)+1; });
+      var top=Object.keys(ec).sort(function(a,b){ return ec[b]-ec[a]; })[0]; if(top) sec.ev=top;
+      sec.rows.forEach(function(r){ if(norm(r.ev)===norm(sec.ev)) r.ev=''; });
+    });
+    var old=S.plans.filter(function(p){ return p.week===w && norm(p.cd)===norm(cd); })[0];
+    if(old){ pl.id=old.id; S.plans[S.plans.indexOf(old)]=pl; } else S.plans.push(pl);
+    S.planId=pl.id; names.push('S'+isoWeek(w)+' ('+planRows(pl)+' DTO'+(old?', reemplazó el anterior':'')+')');
+  });
+  sortPlans();
+  return names;
+}
+function xlsxSheet(aoa, dates, widths, merges){
+  var ws=XLSX.utils.aoa_to_sheet(aoa);
+  dates.forEach(function(rc){ var c=ws[XLSX.utils.encode_cell({r:rc[0],c:rc[1]})]; if(c && typeof c.v==='number'){ c.t='n'; c.z='dd/mm/yyyy'; } });
+  ws['!cols']=widths.map(function(w){ return {wch:w}; }); if(merges) ws['!merges']=merges;
+  return ws;
+}
+function fileSafe(s){ return String(s).replace(/[\\\/:*?"<>|]+/g,' ').replace(/\s+/g,' ').trim(); }
+function downloadPlan(pl){
+  if(typeof XLSX==='undefined'){ showMsg('No se cargó el lector de Excel. Revisa tu conexión y recarga la página.'); return; }
+  var aoa=[['Planificador semanal de DTO'],['Centro: '+pl.cd+' · Semana '+isoWeek(pl.week)+' · '+rangeLabel(pl.week,pl.week+6)+' '+parts(pl.week+6).y],[]], dates=[], merges=[{s:{r:0,c:0},e:{r:0,c:8}},{s:{r:1,c:0},e:{r:1,c:8}}];
+  pl.secs.forEach(function(s){
+    merges.push({s:{r:aoa.length,c:0},e:{r:aoa.length,c:8}});
+    aoa.push(['Planificador de DTO de '+s.title]); aoa.push(HEAD.slice());
+    s.rows.forEach(function(r){
+      if(!r.dto && !r.evd) return;
+      dates.push([aoa.length,1]);
+      aoa.push([pl.cd, r.d+25569, isoWeek(r.d), pilarOf(r), r.dto, r.tipo, r.cod, r.evd, r.ev||s.ev]);
+    });
+    aoa.push([]);
+  });
+  var wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, xlsxSheet(aoa, dates, [14,12,8,13,34,12,10,38,32], merges), 'Planificador Semanal');
+  XLSX.writeFile(wb, fileSafe('Planificador DTO '+pl.cd+' S'+isoWeek(pl.week)+' '+isoD(pl.week))+'.xlsx');
+}
+
+/* ---------- Plan vs realizado ---------- */
+var CST = {ok:['good','Realizado'], otro:['good','Hecho por otro evaluador'], fuera:['warn','Fuera de la semana'], no:['crit','No realizado'], pend:['none','Pendiente']};
+function comparePlan(pl){
+  var ws=pl.week, we=ws+6, last=S.evals.reduce(function(a,e){ return Math.max(a,e.dn); }, -1e9), used=new Set();
+  /* Fuera de la semana: hasta 7 días antes (adelantado) o 14 después (atrasado). */
+  var pool=S.evals.filter(function(e){ return e.dn>=ws-7 && e.dn<=we+14; });
+  var rows=[];
+  pl.secs.forEach(function(s){ s.rows.forEach(function(r){ if(r.dto||r.evd) rows.push({s:s, r:r, ev:r.ev||s.ev, k:r.dto?procKey(r.dto):'', st:'', m:null}); }); });
+  function pick(x, inWeek){
+    var best=null, bs=-1e9, at=x.r.d!=null?x.r.d:ws;
+    pool.forEach(function(e){
+      if(used.has(e)) return;
+      var iw=e.dn>=ws && e.dn<=we; if(iw!==inWeek) return;
+      if(x.k && evKey(e)!==x.k) return;
+      if(x.r.evd ? !sameName(x.r.evd,e.evd) : !sameName(x.ev,e.ev)) return;
+      var sc=(sameName(x.ev,e.ev)?1000:0) - Math.abs(e.dn-at) + (norm(e.type)===norm(x.r.tipo)?0.5:0);
+      if(sc>bs){ bs=sc; best=e; }
+    });
+    return best;
+  }
+  /* Primero las filas con persona (más precisas), luego las que solo dicen proceso y evaluador. */
+  var order=rows.filter(function(x){ return x.r.evd; }).concat(rows.filter(function(x){ return !x.r.evd; }));
+  order.forEach(function(x){ var m=pick(x,true); if(m){ used.add(m); x.m=m; x.st=sameName(x.ev,m.ev)?'ok':'otro'; } });
+  order.forEach(function(x){ if(x.m || !x.r.evd || !x.k || (x.r.d!=null?x.r.d:ws)>last) return; var m=pick(x,false); if(m){ used.add(m); x.m=m; x.st='fuera'; } });
+  order.forEach(function(x){ if(!x.st) x.st=(x.r.d!=null?x.r.d:ws)>last ? 'pend' : 'no'; });
+  var evs=[]; rows.forEach(function(x){ if(x.ev && !evs.some(function(v){ return sameName(v,x.ev); })) evs.push(x.ev); });
+  var extra=pool.filter(function(e){ return e.dn>=ws && e.dn<=we && !used.has(e) && evs.some(function(v){ return sameName(v,e.ev); }); })
+    .sort(function(a,b){ return a.dn-b.dn || (a.hm<b.hm?-1:1); });
+  function sum(list){ var o={n:list.length,ok:0,otro:0,fuera:0,no:0,pend:0}; list.forEach(function(x){ o[x.st]++; }); o.done=o.ok+o.otro; o.due=o.n-o.pend; o.p=o.due?o.done/o.due:null; return o; }
+  var secs=pl.secs.map(function(s){ var l=rows.filter(function(x){ return x.s===s; }); return {s:s, rows:l, sum:sum(l)}; }).filter(function(x){ return x.rows.length; });
+  return {rows:rows, secs:secs, total:sum(rows), extra:extra, last:last, ws:ws, we:we};
+}
+function downloadCmp(pl){
+  if(typeof XLSX==='undefined'){ showMsg('No se cargó el lector de Excel. Revisa tu conexión y recarga la página.'); return; }
+  var C=comparePlan(pl), a=[['Sección','Fecha plan','DTO','Tipo plan','Persona a evaluada','Evaluador plan','Estado','Fecha realizado','Hora','Proceso realizado','Persona en el reporte','Evaluador realizado','Tipo realizado']], d=[];
+  C.rows.forEach(function(x){ var e=x.m; d.push([a.length,1]); if(e) d.push([a.length,7]);
+    a.push([x.s.title, x.r.d!=null?x.r.d+25569:'', x.r.dto, x.r.tipo, x.r.evd, x.ev, CST[x.st][1], e?e.dn+25569:'', e?e.hm:'', e?(e.act||e.proc):'', e?e.evd:'', e?e.ev:'', e?e.type:'']); });
+  var b=[['Fecha','Hora','Proceso','Persona evaluada','Evaluador','Tipo']], d2=[];
+  C.extra.forEach(function(e){ d2.push([b.length,0]); b.push([e.dn+25569, e.hm, e.act||e.proc, e.evd, e.ev, e.type]); });
+  var wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, xlsxSheet(a, d, [13,12,32,11,36,30,24,14,7,28,36,30,11]), 'Plan vs realizado');
+  XLSX.utils.book_append_sheet(wb, xlsxSheet(b, d2, [12,7,30,36,30,11]), 'Sin planificar');
+  XLSX.writeFile(wb, fileSafe('Plan vs realizado '+pl.cd+' S'+isoWeek(pl.week)+' '+isoD(pl.week))+'.xlsx');
+}
+
+/* ---------- Planificador: vistas ---------- */
+function planSelect(id){
+  return '<label class="vh" for="'+id+'">Plan</label><select id="'+id+'" class="plsel">'+S.plans.map(function(p){
+    return '<option value="'+esc(p.id)+'"'+(p.id===S.planId?' selected':'')+'>'+esc(planName(p)+(S.plans.some(function(q){ return q!==p && q.week===p.week; })?' · '+p.cd:''))+'</option>'; }).join('')+'</select>';
+}
+function noPlans(){
+  return '<section class="drop"><h2>Todavía no hay planes semanales</h2><p class="sub">Crea uno aquí y descárgalo como Excel, o carga el Excel de tu planificador (como la hoja "Planificador Semanal") con el botón "Cargar Excel".</p>'+
+    '<div class="ctrls" style="justify-content:center"><button type="button" class="btn pri" data-act="new">Crear plan semanal</button><label class="btn" for="fileIn">Cargar planificador</label></div></section>';
+}
+function dtoOpts(v){
+  var i=catIdx(v), h='<option value="">Elegir DTO…</option>';
+  if(v && i<0) h+='<option value="'+esc(v)+'" selected>'+esc(v)+'</option>';
+  Object.keys(PILAR).forEach(function(pk){
+    h+='<optgroup label="'+esc(PILAR[pk])+'">';
+    CAT.forEach(function(c,ci){ if(c[2]===pk) h+='<option value="'+esc(c[0])+'"'+(ci===i?' selected':'')+'>'+esc(c[0]===c[1]?c[0]:c[0]+' — '+c[1])+'</option>'; });
+    h+='</optgroup>';
+  });
+  return h;
+}
+function personHint(name, RO, si, ri){
+  if(!name || !RO.dataList.length || RO.data[norm(name)]) return '';
+  var sug=RO.dataList.filter(function(p){ return sameName(name,p.name); })[0];
+  if(sug) return '<span class="hint">En el reporte aparece como <button type="button" data-act="sug" data-s="'+si+'" data-i="'+ri+'" data-v="'+esc(sug.name)+'">'+esc(sug.name)+'</button></span>';
+  return '<span class="hint">⚠ No aparece en el reporte cargado</span>';
+}
+function renderPlanner(){
+  var v=$('vPlan'), pl=curPlan();
+  $('subtitle').textContent='Arma el plan de la semana, descárgalo como Excel y vuelve a cargarlo para compararlo con lo realizado.';
+  if(!pl){ v.innerHTML=noPlans(); return; }
+  var RO=roster(), n=planRows(pl);
+  var h='<datalist id="dlPeople">'+RO.people.map(function(p){ return '<option value="'+esc(p.name)+'">'+(p.pos?esc(p.pos):'')+'</option>'; }).join('')+'</datalist>'+
+    '<datalist id="dlEvals">'+RO.evals.map(function(p){ return '<option value="'+esc(p.name)+'">'+(p.pos?esc(p.pos):'')+'</option>'; }).join('')+'</datalist>';
+  h+='<section class="card psec"><div class="sechead"><div><span class="lbl">Plan semanal</span><h2>'+esc(planName(pl))+'</h2><p class="sub">'+n+' DTO planificados · '+esc(pl.cd)+'</p></div>'+
+    '<div class="ctrls">'+(S.plans.length>1?planSelect('planSelA'):'')+'<button type="button" data-act="new">Nuevo plan</button><button type="button" data-act="dup">Copiar a la semana siguiente</button>'+
+    '<button type="button" class="btn pri" data-act="dl">Descargar Excel</button></div></div>'+
+    '<div class="rules"><label for="plCd">Centro <input type="text" id="plCd" data-f="cd" value="'+esc(pl.cd)+'"></label>'+
+    '<label for="plWeek">Semana del <input type="date" id="plWeek" data-f="week" value="'+isoD(pl.week)+'"></label>'+
+    '<span class="sub">De lunes a domingo. Al cambiar la semana, las fechas de las filas se mueven con ella.</span>'+
+    '<button type="button" class="quiet" data-act="del">Eliminar este plan</button></div></section>';
+  pl.secs.forEach(function(s,si){
+    var cv=coverage(pl,s), cnt=s.rows.filter(function(r){ return r.dto||r.evd; }).length;
+    h+='<section class="card psec"><div class="sechead"><div><h2>Planificador de DTO de '+esc(s.title)+'</h2><p class="sub">'+cnt+' DTO'+(s.resp?' · Meta de '+esc(s.resp):'')+'</p></div>'+
+      '<div class="ctrls"><label for="sev-'+si+'">Evaluador <input type="text" list="dlEvals" id="sev-'+si+'" data-s="'+si+'" data-f="sev" value="'+esc(s.ev)+'" style="width:250px"></label></div></div>';
+    if(cv && cv.list.length) h+='<div class="pills"><span class="sub" style="font-size:12.5px">Contra la meta semanal (mensual ÷ '+cv.div+'):</span>'+cv.list.map(function(it){
+      var st=it.meta>0 ? (it.n>=it.meta-1e-9?'good':it.n>0?'warn':'crit') : 'none';
+      return '<span class="pill s-'+st+'" data-tip="'+esc(it.name+'\nPlanificados: '+it.n+' · Meta semanal: '+fmtN(it.meta)+(it.meta>0?'':'\nSin meta para este responsable'))+'">'+esc(it.name)+' <b>'+it.n+'/'+fmtN(it.meta)+'</b></span>'; }).join('')+'</div>';
+    if(s.rows.length){
+      h+='<div class="scroll"><table class="ptable"><colgroup><col style="width:138px"><col style="width:250px"><col style="width:92px"><col style="width:112px"><col style="width:90px"><col><col style="width:220px"><col style="width:38px"></colgroup>'+
+        '<thead><tr><th>Fecha</th><th>DTO</th><th>Pilar</th><th>Tipo</th><th>Código</th><th>Persona a evaluada</th><th>Evaluador</th><th><span class="vh">Quitar</span></th></tr></thead><tbody>';
+      s.rows.forEach(function(r,ri){
+        var id='f-'+si+'-'+ri+'-', lab=' fila '+(ri+1)+', '+s.title;
+        h+='<tr><td><input type="date" id="'+id+'d" data-s="'+si+'" data-i="'+ri+'" data-f="d" value="'+(r.d!=null?isoD(r.d):'')+'" aria-label="Fecha'+lab+'"></td>'+
+          '<td><select id="'+id+'dto" data-s="'+si+'" data-i="'+ri+'" data-f="dto" aria-label="DTO'+lab+'">'+dtoOpts(r.dto)+'</select></td>'+
+          '<td class="pil">'+esc(pilarOf(r)||'—')+'</td>'+
+          '<td><select id="'+id+'tipo" data-s="'+si+'" data-i="'+ri+'" data-f="tipo" aria-label="Tipo'+lab+'">'+['Preventiva','Reactiva'].map(function(t){ return '<option'+(t===r.tipo?' selected':'')+'>'+t+'</option>'; }).join('')+
+            (r.tipo&&r.tipo!=='Preventiva'&&r.tipo!=='Reactiva'?'<option selected>'+esc(r.tipo)+'</option>':'')+'</select></td>'+
+          '<td><input type="text" id="'+id+'cod" data-s="'+si+'" data-i="'+ri+'" data-f="cod" value="'+esc(r.cod)+'" aria-label="Código'+lab+'"></td>'+
+          '<td><input type="text" list="dlPeople" id="'+id+'evd" data-s="'+si+'" data-i="'+ri+'" data-f="evd" value="'+esc(r.evd)+'" placeholder="Nombre de la persona" aria-label="Persona a evaluada'+lab+'">'+personHint(r.evd,RO,si,ri)+'</td>'+
+          '<td><input type="text" list="dlEvals" id="'+id+'ev" data-s="'+si+'" data-i="'+ri+'" data-f="ev" value="'+esc(r.ev)+'" placeholder="'+esc(s.ev||'Evaluador')+'" aria-label="Evaluador'+lab+'"></td>'+
+          '<td><button type="button" class="rm" data-act="rm" data-s="'+si+'" data-i="'+ri+'" aria-label="Quitar'+lab+'" title="Quitar fila">×</button></td></tr>';
+      });
+      h+='</tbody></table></div>';
+    }
+    h+='<div class="ctrls"><button type="button" data-act="add" data-s="'+si+'">+ Agregar fila</button>'+
+      (cv&&cv.list.some(function(it){ return it.meta>0 && it.n<it.meta-1e-9; })?'<button type="button" data-act="fill" data-s="'+si+'">Agregar lo que falta para la meta</button>':'')+'</div></section>';
+  });
+  v.innerHTML=h;
+}
+function renderCmp(){
+  var v=$('vCmp'), pl=curPlan();
+  $('subtitle').textContent='Compara un plan semanal con los DTO del reporte cargado.';
+  if(!pl){ v.innerHTML=noPlans(); return; }
+  var has=S.evals.length>0, C=has?comparePlan(pl):null;
+  var h='<section class="card"><div class="sechead"><div><span class="lbl">Plan vs realizado</span><h2>'+esc(planName(pl))+' · '+esc(pl.cd)+'</h2><p class="sub">'+
+    (has?esc((S.fileName?S.fileName+' · ':'')+'datos hasta el '+dLabel(C.last)+(C.last<C.we?' (la semana aún no está completa en el reporte)':'')):'Sin reporte cargado')+'</p></div>'+
+    '<div class="ctrls">'+planSelect('planSelB')+'<button type="button" data-act="edit">Editar plan</button>'+(has?'<button type="button" class="btn pri" data-act="cmpdl">Descargar comparación</button>':'')+'</div></div></section>';
+  if(!has){ v.innerHTML=h+'<div class="note">Carga el reporte "Data OWD" con el botón "Cargar Excel" para ver qué se hizo de este plan.</div>'; return; }
+  if(!C.rows.length){ v.innerHTML=h+'<div class="note">Este plan no tiene filas con DTO o persona. Agrégalas en "Editar plan".</div>'; return; }
+  var T=C.total;
+  h+='<section class="month"><div class="card hero"><span class="lbl">Plan realizado</span><div class="big">'+pct(T.p)+'</div>'+meter(T.p)+'<div>'+(T.p==null?chip('none','El reporte aún no llega a esta semana'):chip(T.p))+'</div>'+
+    '<div class="facts num"><span><strong>'+T.done+'</strong> de '+T.due+' DTO que ya debían estar hechos</span>'+(T.pend?'<span>'+T.n+' planificados en total</span>':'')+
+    (T.otro?'<span>'+T.otro+' hechos por otro evaluador</span>':'')+(T.fuera?'<span>'+T.fuera+' hechos fuera de la semana (no cuentan)</span>':'')+
+    (T.no?'<span>'+T.no+' no realizados</span>':'')+(T.pend?'<span>'+T.pend+' pendientes: su fecha es posterior al reporte</span>':'')+
+    '<span>'+C.extra.length+' realizados sin planificar</span></div></div>'+
+    '<div class="card">'+hbars('Por sección · % del plan realizado', C.secs.map(function(x){ return {name:x.s.title+(x.s.ev?' · '+x.s.ev:''), roll:{p:x.sum.p,real:x.sum.done,cnt:x.sum.done,plan:x.sum.due}}; }), 100)+'</div></section>';
+  var F=[['all','Todos'],['no','No realizados'],['fuera','Fuera de la semana'],['otro','Otro evaluador'],['done','Realizados'],['pend','Pendientes']];
+  h+='<div class="sechead"><h2>Detalle del plan</h2><div class="seg" id="cmpSeg" role="group" aria-label="Filtrar por estado">'+F.map(function(f){
+    var c=f[0]==='all'?T.n:f[0]==='done'?T.done:T[f[0]]; if(f[0]!=='all'&&!c) return '';
+    return '<button type="button" data-cf="'+f[0]+'" aria-pressed="'+(S.cmpF===f[0])+'">'+f[1]+' · '+c+'</button>'; }).join('')+'</div></div>';
+  function keep(x){ return S.cmpF==='all' || x.st===S.cmpF || (S.cmpF==='done' && (x.st==='ok'||x.st==='otro')); }
+  var t='<table class="cmp"><thead><tr><th>Fecha plan</th><th>DTO</th><th>Persona a evaluada</th><th>Evaluador</th><th>Estado</th><th>Lo realizado</th></tr></thead><tbody>', any=false;
+  C.secs.forEach(function(x){
+    var l=x.rows.filter(keep); if(!l.length) return; any=true;
+    t+='<tr class="area"><td colspan="4">'+esc(x.s.title)+'</td><td colspan="2">'+x.sum.done+' de '+x.sum.due+' · '+pct(x.sum.p)+(x.sum.pend?' · '+x.sum.pend+' pendientes':'')+'</td></tr>';
+    l.forEach(function(y){
+      var e=y.m, c=CST[y.st];
+      t+='<tr><td style="white-space:nowrap">'+(y.r.d!=null?dLabel(y.r.d):'—')+'</td><td>'+esc(y.r.dto||'—')+'<br><span class="extra">'+esc(y.r.tipo||'')+'</span></td><td>'+esc(y.r.evd||'(cualquier persona)')+'</td><td>'+esc(y.ev||'—')+'</td>'+
+        '<td class="st">'+chip(c[0],c[1])+'</td><td>'+(e?fecha(e)+' · '+esc(e.ev)+'<br><span class="extra">'+esc((e.act||e.proc)+(e.type?' · '+e.type:'')+(norm(e.evd)!==norm(y.r.evd)?' · '+e.evd:''))+'</span>':'—')+'</td></tr>';
+    });
+  });
+  h+='<section class="card"><div class="scroll">'+(any?t+'</tbody></table>':'<p class="sub">Ninguna fila con ese estado.</p>')+'</div></section>';
+  h+='<div class="sechead"><div><h2>Realizados sin planificar</h2><p class="sub">DTO de la semana hechos por los evaluadores del plan que no corresponden a ninguna fila.</p></div></div>';
+  h+='<section class="card"><div class="scroll">'+(C.extra.length?'<table><thead><tr><th>Fecha</th><th>Proceso</th><th>Persona evaluada</th><th>Evaluador</th><th>Tipo</th></tr></thead><tbody>'+
+    C.extra.map(function(e){ return '<tr><td style="white-space:nowrap">'+fecha(e)+'</td><td>'+esc(e.act||e.proc)+'</td><td>'+esc(e.evd||'—')+'</td><td>'+esc(e.ev||'—')+'</td><td>'+esc(e.type||'—')+'</td></tr>'; }).join('')+'</tbody></table>':
+    '<p class="sub">Todo lo que hicieron los evaluadores del plan en la semana estaba planificado.</p>')+'</div></section>';
+  v.innerHTML=h;
+}
+
+/* Re-render sin perder el campo activo. */
+function softPlanner(){ setTimeout(function(){ var a=document.activeElement, id=a&&a.id; renderPlanner(); if(id && $(id)) $(id).focus(); }, 0); }
+function onPlanChange(e){
+  var t=e.target, pl=curPlan(); if(!t.dataset) return;
+  if(t.classList.contains('plsel')){ S.planId=t.value; S.cmpF='all'; save(); render(); return; }
+  if(!pl || !t.dataset.f) return;
+  var f=t.dataset.f, si=+t.dataset.s, ri=+t.dataset.i;
+  if(f==='cd') pl.cd=clean(t.value)||pl.cd;
+  else if(f==='week'){ var w=fromIso(t.value); if(w==null) return; w=mondayOf(w); var dd=w-pl.week; pl.week=w; pl.secs.forEach(function(s){ s.rows.forEach(function(r){ if(r.d!=null) r.d+=dd; }); }); sortPlans(); }
+  else if(f==='sev') pl.secs[si].ev=clean(t.value);
+  else { var r=pl.secs[si].rows[ri]; if(!r) return; if(f==='d'){ var d=fromIso(t.value); r.d=d!=null?d:pl.week; } else r[f]=f==='tipo'?t.value:clean(t.value); }
+  save(); softPlanner();
+}
+function onPlanClick(e){
+  var cf=e.target.closest('[data-cf]'); if(cf){ S.cmpF=cf.dataset.cf; render(); return; }
+  var b=e.target.closest('[data-act]'); if(!b) return;
+  var act=b.dataset.act, pl=curPlan(), si=+b.dataset.s, ri=+b.dataset.i;
+  if(act==='new'){
+    var cur=mondayOf(todayDn()), w=S.plans.some(function(p){ return p.week===cur; }) ? Math.max.apply(null, S.plans.map(function(p){ return p.week; }))+7 : cur;
+    var np=newPlan(w, pl?pl.cd:'DC Bavaro', pl); S.plans.push(np); S.planId=np.id; sortPlans(); S.view='plan';
+  }else if(act==='dup' && pl){
+    var nw=pl.week+7, ex=S.plans.filter(function(p){ return p.week===nw && norm(p.cd)===norm(pl.cd); })[0];
+    if(ex && !confirm('Ya hay un plan para la S'+isoWeek(nw)+'. ¿Reemplazarlo con una copia de este?')) return;
+    var cp=JSON.parse(JSON.stringify(pl)); cp.id=ex?ex.id:newPlan(nw).id; cp.week=nw; cp.secs.forEach(function(s){ s.rows.forEach(function(r){ if(r.d!=null) r.d+=7; }); });
+    if(ex) S.plans[S.plans.indexOf(ex)]=cp; else S.plans.push(cp); S.planId=cp.id; sortPlans();
+    showInfo('Se copió el plan a la '+planName(cp)+'.');
+  }else if(act==='del' && pl){
+    if(!confirm('¿Eliminar el plan '+planName(pl)+'? Si no lo descargaste, se pierde.')) return;
+    S.plans.splice(S.plans.indexOf(pl),1); S.planId=S.plans[0]?S.plans[0].id:null;
+  }else if(act==='dl' && pl){ downloadPlan(pl); return; }
+  else if(act==='cmpdl' && pl){ downloadCmp(pl); return; }
+  else if(act==='edit'){ S.view='plan'; }
+  else if(act==='add' && pl){ var rs=pl.secs[si].rows, last=rs[rs.length-1]; rs.push(blankRow(last&&last.d!=null?last.d:pl.week)); save(); renderPlanner(); var el=$('f-'+si+'-'+(rs.length-1)+'-dto'); if(el) el.focus(); return; }
+  else if(act==='rm' && pl){ pl.secs[si].rows.splice(ri,1); }
+  else if(act==='fill' && pl){ var k=fillFromMeta(pl, si); showInfo(k?'Se agregaron '+k+' filas a '+pl.secs[si].title+'. Falta poner la persona a evaluar.':''); }
+  else if(act==='sug' && pl){ var rr=pl.secs[si].rows[ri]; if(rr) rr.evd=b.dataset.v; }
+  else return;
+  save(); render();
+}
+$('vPlan').addEventListener('change', onPlanChange);
+$('vCmp').addEventListener('change', onPlanChange);
+$('vPlan').addEventListener('click', onPlanClick);
+$('vCmp').addEventListener('click', onPlanClick);
+document.querySelector('.tabs').addEventListener('click', function(e){ var b=e.target.closest('button[data-view]'); if(b){ S.view=b.dataset.view; showInfo(''); save(); render(); } });
+
+/* ---------- Eventos ---------- */
+$('fileIn').addEventListener('change', function(e){ readFiles(e.target.files); e.target.value=''; });
+$('fileBtn').addEventListener('keydown', function(e){ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); $('fileIn').click(); } });
+$('monthSel').addEventListener('change', function(e){ S.month=e.target.value; S.open={}; save(); render(); });
+$('planBtn').addEventListener('click', function(){ var ed=$('editor'); ed.hidden=!ed.hidden; this.setAttribute('aria-expanded', String(!ed.hidden)); this.textContent=ed.hidden?'Plan y reglas':'Cerrar plan'; render(); });
+$('resetPlan').addEventListener('click', function(){ S.plan=clonePlan(DEFAULT_PLAN); S.div='4'; S.cap=true; S.map=defMap(); S.area='all'; save(); render(); });
+$('divSel').addEventListener('change', function(e){ S.div=e.target.value; save(); render(); });
+$('capChk').addEventListener('change', function(e){ S.cap=e.target.checked; save(); render(); });
+$('matrix').addEventListener('change', function(e){
+  var t=e.target; if(!t.dataset||t.dataset.p===undefined) return;
+  S.plan.procs[+t.dataset.p].metas[+t.dataset.r]=Math.max(0, Math.round(+t.value||0)); save(); render();
+});
+$('evalList').addEventListener('change', function(e){ var t=e.target; if(t.dataset&&t.dataset.ev!==undefined){ S.map[t.dataset.ev]=t.value; save(); render(); } });
+$('areaSeg').addEventListener('click', function(e){ var b=e.target.closest('button'); if(b){ S.area=b.dataset.area; save(); render(); } });
+$('notes').addEventListener('click', function(e){ if(e.target.id==='clearData'){ S.evals=[]; S.fileName=''; S.agency=''; S.month=null; S.open={}; R=null; showMsg(''); save(); render(); } });
+$('pplTable').addEventListener('click', function(e){ var tr=e.target.closest('tr.p'); if(tr){ var k=tr.getAttribute('data-k'); S.open[k]=!S.open[k]; renderPeople(); } });
+$('personQ').addEventListener('input', function(e){ S.q=e.target.value; renderPeople(); });
+$('pplToggle').addEventListener('click', function(){
+  if(!R) return;
+  var q=norm(S.q), list=R.people.filter(function(p){ return !q || norm(p.name).indexOf(q)>=0 || p.list.some(function(x){ return norm(x.pname).indexOf(q)>=0; }); });
+  var allOpen=list.length>0 && list.every(function(p){ return S.open[p.key]; });
+  list.forEach(function(p){ S.open[p.key]=!allOpen; }); renderPeople();
+});
+
+var depth=0;
+window.addEventListener('dragenter', function(e){ e.preventDefault(); depth++; document.body.classList.add('dragging'); });
+window.addEventListener('dragleave', function(){ depth=Math.max(0,depth-1); if(!depth) document.body.classList.remove('dragging'); });
+window.addEventListener('dragover', function(e){ e.preventDefault(); });
+window.addEventListener('drop', function(e){ e.preventDefault(); depth=0; document.body.classList.remove('dragging'); if(e.dataTransfer&&e.dataTransfer.files) readFiles(e.dataTransfer.files); });
+
+var tip=$('tip');
+function showTip(el,x,y){
+  tip.textContent=el.getAttribute('data-tip'); tip.hidden=false;
+  var r=tip.getBoundingClientRect(), nx=Math.min(window.innerWidth-r.width-8, Math.max(8,x+12)), ny=y-r.height-12; if(ny<8) ny=y+16;
+  tip.style.left=nx+'px'; tip.style.top=ny+'px';
+}
+document.addEventListener('mousemove', function(e){ var el=e.target.closest&&e.target.closest('[data-tip]'); if(el) showTip(el,e.clientX,e.clientY); else tip.hidden=true; });
+document.addEventListener('focusin', function(e){ var el=e.target.closest&&e.target.closest('[data-tip]'); if(el){ var r=el.getBoundingClientRect(); showTip(el,r.left+r.width/2,r.top+20); } });
+document.addEventListener('focusout', function(){ tip.hidden=true; });
+window.addEventListener('scroll', function(){ tip.hidden=true; }, true);
+
+load(); render();
+})();
+</script>
