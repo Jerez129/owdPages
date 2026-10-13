@@ -1037,7 +1037,7 @@ function staffSelect(id, attrs, val, cd, first, otros, label){
 function renderPlanner(){
   var v=$('vPlan'), pl=curPlan();
   $('subtitle').textContent='Arma el plan de la semana, descárgalo como Excel y vuelve a cargarlo para compararlo con lo realizado.';
-  if(!pl){ v.innerHTML=noPlans(); return; }
+  if(!pl){ v.innerHTML=noPlans()+suggestCard(null); return; }
   var n=planRows(pl), h='';
   h+='<section class="card psec"><div class="sechead"><div><span class="lbl">Plan semanal</span><h2>'+esc(planName(pl))+'</h2><p class="sub">'+n+' DTO planificados · '+esc(pl.cd)+'</p></div>'+
     '<div class="ctrls">'+(S.plans.length>1?planSelect('planSelA'):'')+'<button type="button" data-act="new">Nuevo plan</button><button type="button" data-act="dup">Copiar a la semana siguiente</button>'+
@@ -1153,6 +1153,7 @@ function leastEvaluated(pl){
   return {from:from, last:last, list:people};
 }
 function suggestCard(pl){
+  pl=pl||newPlan(mondayOf(todayDn()),'DC Bavaro');
   var h='<section class="card psec"><div class="sechead"><div><span class="lbl">Sugerencias para planificar</span><h2>Personas con menos DTO</h2>';
   var miss=[]; if(!S.staff.length) miss.push('el Excel de personal (HC)'); if(!S.evals.length) miss.push('el reporte "Data OWD"');
   if(miss.length) return h+'</div></div><p class="sub">Para que la lista sea real hace falta cargar '+miss.join(' y ')+' con "Cargar Excel". Se mostrará cuando estén los dos.</p></section>';
@@ -1181,9 +1182,9 @@ function softPlanner(){ setTimeout(function(){ var a=document.activeElement, id=
 function onPlanChange(e){
   var t=e.target, pl=curPlan(); if(!t.dataset) return;
   if(t.classList.contains('plsel')){ S.planId=t.value; S.cmpF='all'; save(); render(); return; }
-  if(!pl || !t.dataset.f) return;
   var f=t.dataset.f, si=+t.dataset.s, ri=+t.dataset.i;
-  if(f.indexOf('sug-')===0){ var sk=f.slice(4); S.sug[sk]=sk==='sec'?+t.value:t.value; if(sk!=='sec') S.sug.more=0; softPlanner(); return; }
+  if(f && f.indexOf('sug-')===0){ var sk=f.slice(4); S.sug[sk]=sk==='sec'?+t.value:t.value; if(sk!=='sec') S.sug.more=0; softPlanner(); return; }
+  if(!pl || !f) return;
   if(f==='cd') pl.cd=clean(t.value)||pl.cd;
   else if(f==='week'){ var w=fromIso(t.value); if(w==null) return; w=mondayOf(w); var dd=w-pl.week; pl.week=w; pl.secs.forEach(function(s){ s.rows.forEach(function(r){ if(r.d!=null) r.d+=dd; }); }); sortPlans(); }
   else if(f==='sev') pl.secs[si].ev=clean(t.value);
@@ -1210,7 +1211,8 @@ function onPlanClick(e){
   else if(act==='cmpdl' && pl){ downloadCmp(pl); return; }
   else if(act==='edit'){ S.view='plan'; }
   else if(act==='sugmore'){ S.sug.more++; renderPlanner(); return; }
-  else if(act==='sugadd' && pl){
+  else if(act==='sugadd'){
+    if(!pl){ pl=newPlan(mondayOf(todayDn()),'DC Bavaro'); S.plans.push(pl); S.planId=pl.id; sortPlans(); }
     var sec=pl.secs[S.sug.sec]||pl.secs[0], nr=blankRow(pl.week); nr.evd=b.dataset.v; sec.rows.push(nr);
     showInfo(b.dataset.v+' se agregó a '+sec.title+'. Falta elegir el DTO.');
   }
