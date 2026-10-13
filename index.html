@@ -182,7 +182,7 @@ input[type=text],input[type=number],input[type=search]{font:inherit;color:var(--
 .psec{display:flex;flex-direction:column;gap:12px}
 .ctrls label{display:inline-flex;gap:8px;align-items:center}
 input[type=date]{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--axis);border-radius:4px;padding:5px 8px}
-.ptable{min-width:1000px}
+.ptable{min-width:1180px}
 .ptable th,.ptable td{padding:4px 5px;vertical-align:top}
 .ptable input,.ptable select{width:100%;font-size:13px;padding:5px 7px}
 .ptable select{padding:5px 4px}
@@ -364,7 +364,7 @@ function clonePlan(p){ return {cd:p.cd||'', mes:p.mes||null, year:p.year||null, 
 var DEFAULT_MAP = {'freyky reyes mercedes':'analista de control'};
 function defMap(){ return Object.assign({}, DEFAULT_MAP); }
 var S = {plan:clonePlan(DEFAULT_PLAN), div:'4', cap:true, map:defMap(), evals:[], fileName:'', agency:'', month:null, area:'all', open:{}, q:'',
-  view:'adh', plans:[], planId:null, cmpF:'all'};
+  view:'adh', plans:[], planId:null, cmpF:'all', staff:[], staffFile:'', sug:{days:'30', pos:'op', sec:0, more:0}};
 
 function $(id){ return document.getElementById(id); }
 function esc(s){ return String(s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
@@ -389,7 +389,7 @@ function planLabel(){ var P=S.plan, a=[]; if(P.cd) a.push(P.cd); if(P.mes&&P.yea
 /* ---------- Persistencia (solo comodidad de este navegador) ---------- */
 function save(){
   try{ localStorage.setItem(KEY, JSON.stringify({plan:S.plan, div:S.div, cap:S.cap, map:S.map, fileName:S.fileName, agency:S.agency, month:S.month, area:S.area,
-    view:S.view, plans:S.plans, planId:S.planId,
+    view:S.view, plans:S.plans, planId:S.planId, staff:S.staff, staffFile:S.staffFile,
     evals:S.evals.map(function(e){ return [e.ev,e.pos,e.proc,e.act,e.evd,e.evdPos,e.type,e.y,e.m,e.d,e.hm,e.n,e.fails]; })})); }catch(_){}
 }
 function load(){
@@ -399,6 +399,7 @@ function load(){
     if(o.div) S.div=o.div; if(typeof o.cap==='boolean') S.cap=o.cap;
     S.map=Object.assign(defMap(), o.map||{}); S.fileName=o.fileName||'';
     if(Array.isArray(o.plans)) S.plans=o.plans.filter(function(p){ return p && Array.isArray(p.secs) && typeof p.week==='number'; });
+    if(Array.isArray(o.staff)) S.staff=o.staff.filter(function(p){ return p && p.n; }); S.staffFile=o.staffFile||'';
     S.planId=o.planId||null; if(o.view==='adh'||o.view==='plan'||o.view==='cmp') S.view=o.view; S.agency=o.agency||''; S.month=o.month||null; S.area=o.area||'all';
     S.evals=(o.evals||[]).map(function(a){ return {ev:a[0],pos:a[1],proc:a[2],act:a[3],evd:a[4],evdPos:a[5],type:a[6],y:a[7],m:a[8],d:a[9],hm:a[10],n:a[11],fails:a[12]||[],dn:dn(a[7],a[8],a[9])}; });
   }catch(_){}
@@ -482,12 +483,13 @@ function readFile(file){
     fr.onload=function(){
       try{
         if(typeof XLSX==='undefined') throw new Error('No se cargó el lector de Excel. Revisa tu conexión y recarga la página.');
-        var all=sheetRows(XLSX.read(new Uint8Array(fr.result),{type:'array'})), pw=findPlanner(all), d=findData(all), p=(d||pw)?null:findPlan(all), msgs=[];
+        var all=sheetRows(XLSX.read(new Uint8Array(fr.result),{type:'array'})), pw=findPlanner(all), st=findStaff(all), d=findData(all), p=(d||pw||st)?null:findPlan(all), msgs=[];
+        if(st){ var ns=importStaff(st); S.staffFile=file.name; infos.push('Se cargó el personal: '+ns+' personas. Ya puedes elegirlas de la lista en el planificador.'); if(!pw && !d) staffLoaded=true; }
         /* Un mismo libro puede traer el planificador y la data (como "Libro1"): se leen los dos. */
         if(pw){ var got=importPlanner(pw); infos.push('Se cargó el planificador: '+got.join(', ')+'.'); planLoaded=true; }
         if(d){ var out=parseData(d); S.evals=out.evals; S.fileName=file.name; S.agency=out.agency; S.month=null; S.open={}; if(out.bad) msgs.push('Se omitieron '+out.bad+' filas sin fecha válida.'); }
         else if(p){ S.plan=parsePlan(p); S.area='all'; }
-        if(!pw && !d && !p) throw new Error('No reconocí "'+file.name+'". El reporte debe traer las columnas "Proceso" y "Fecha evaluación"; el plan, una fila "Responsable" y una columna "Proceso"; el planificador, las columnas "DTO", "Persona a evaluada" y "Evaluador".');
+        if(!pw && !d && !p && !st) throw new Error('No reconocí "'+file.name+'". El reporte debe traer las columnas "Proceso" y "Fecha evaluación"; el plan, una fila "Responsable" y una columna "Proceso"; el planificador, las columnas "DTO", "Persona a evaluada" y "Evaluador"; el personal (HC), las columnas "Name" y "Position".');
         res(msgs.join(' '));
       }catch(err){ res(err.message||String(err)); }
     };
@@ -496,11 +498,11 @@ function readFile(file){
 }
 function readFiles(list){
   var files=Array.prototype.slice.call(list||[]); if(!files.length) return;
-  var msgs=[]; infos=[]; planLoaded=false;
+  var msgs=[]; infos=[]; planLoaded=false; staffLoaded=false;
   files.reduce(function(p,f){ return p.then(function(){ return readFile(f); }).then(function(m){ if(m) msgs.push(m); }); }, Promise.resolve())
-    .then(function(){ showMsg(msgs.join(' ')); showInfo(infos.join(' ')); if(planLoaded) S.view='cmp'; save(); render(); });
+    .then(function(){ showMsg(msgs.join(' ')); showInfo(infos.join(' ')); if(planLoaded) S.view='cmp'; else if(staffLoaded) S.view='plan'; save(); render(); });
 }
-var infos=[], planLoaded=false;
+var infos=[], planLoaded=false, staffLoaded=false;
 function showMsg(t){ var m=$('msg'); m.textContent=t||''; m.hidden=!t; }
 function showInfo(t){ var m=$('info'); m.textContent=t||''; m.hidden=!t; }
 
@@ -820,17 +822,6 @@ function newPlan(week, cd, from){
 function blankRow(d){ return {d:d, dto:'', tipo:'Preventiva', cod:'', evd:'', ev:''}; }
 function planRows(pl){ return pl.secs.reduce(function(s,x){ return s+x.rows.filter(function(r){ return r.dto||r.evd; }).length; },0); }
 
-/* Personas y evaluadores conocidos, para autocompletar y detectar nombres mal escritos. */
-function roster(){
-  var p={}, v={}, dp={};
-  function add(o,name,pos){ var k=norm(name); if(!k) return; var r=o[k]||(o[k]={name:clean(name),pos:''}); if(pos&&!r.pos) r.pos=clean(pos); }
-  S.evals.forEach(function(e){ add(p,e.evd,e.evdPos); add(dp,e.evd,e.evdPos); add(v,e.ev,e.pos); });
-  SECS.forEach(function(s){ add(v,s.ev); });
-  S.plans.forEach(function(pl){ pl.secs.forEach(function(s){ add(v,s.ev); s.rows.forEach(function(r){ add(p,r.evd); add(v,r.ev); }); }); });
-  function list(o){ return Object.keys(o).map(function(k){ return o[k]; }).sort(function(a,b){ return a.name.localeCompare(b.name,'es'); }); }
-  return {people:list(p), evals:list(v), data:dp, dataList:list(dp)};
-}
-
 /* Meta semanal de la sección según el plan "Meta OWD" y la regla de "Plan y reglas". */
 function coverage(pl, sec){
   var P=S.plan, ri=P.resp.map(norm).indexOf(norm(sec.resp)); if(ri<0) return null;
@@ -1001,35 +992,77 @@ function dtoOpts(v){
   });
   return h;
 }
-function personHint(name, RO, si, ri){
-  if(!name || !RO.dataList.length || RO.data[norm(name)]) return '';
-  var sug=RO.dataList.filter(function(p){ return sameName(name,p.name); })[0];
-  if(sug) return '<span class="hint">En el reporte aparece como <button type="button" data-act="sug" data-s="'+si+'" data-i="'+ri+'" data-v="'+esc(sug.name)+'">'+esc(sug.name)+'</button></span>';
-  return '<span class="hint">⚠ No aparece en el reporte cargado</span>';
+/* ---------- Personal (Excel "HC") ---------- */
+/* Solo se guardan nombre, puesto, centro y si está desactivado; correos, PIN y SHARP no se leen. */
+function findStaff(all){
+  for(var s=0;s<all.length;s++) for(var i=0;i<Math.min(all[s].length,20);i++){
+    var h=(all[s][i]||[]).map(norm);
+    if((h.indexOf('name')>=0||h.indexOf('nombre')>=0) && (h.indexOf('position')>=0||h.indexOf('posicion')>=0||h.indexOf('puesto')>=0) && h.indexOf('proceso')<0) return {rows:all[s],i:i,h:h};
+  }
+  return null;
+}
+function importStaff(f){
+  var h=f.h, cN=h.indexOf('name'); if(cN<0) cN=h.indexOf('nombre');
+  var cP=['position','posicion','puesto'].map(function(k){ return h.indexOf(k); }).filter(function(c){ return c>=0; })[0];
+  var cW=['works at','centro','agencia'].map(function(k){ return h.indexOf(k); }).filter(function(c){ return c>=0; })[0], cU=h.indexOf('user type');
+  var seen={}, out=[];
+  for(var r=f.i+1;r<f.rows.length;r++){
+    var row=f.rows[r]||[], n=clean(row[cN]), k=norm(n); if(!n || seen[k]) continue; seen[k]=1;
+    out.push({n:n, pos:cP>=0?clean(row[cP]):'', at:cW>=0?clean(row[cW]):'', off:cU>=0 && /desactivad/.test(norm(row[cU]))});
+  }
+  if(!out.length) throw new Error('El Excel de personal no trae nombres.');
+  out.sort(function(a,b){ return a.n.localeCompare(b.n,'es',{sensitivity:'base'}); });
+  S.staff=out; NM={};
+  return out.length;
+}
+function cap(s){ return s.toLowerCase().replace(/(^|\s)\S/g,function(c){ return c.toUpperCase(); }); }
+/* Opciones de la lista: primero el personal del centro agrupado por puesto, luego los de otros centros. */
+var STOPT={};
+function staffOpts(cd, otros){
+  var key=norm(cd)+'|'+otros+'|'+S.staff.length; if(STOPT[key]) return STOPT[key];
+  var mine={}, rest=[];
+  S.staff.forEach(function(p){ if(p.off) return; if(!cd || !p.at || norm(p.at)===norm(cd)) (mine[p.pos||'Sin puesto']=mine[p.pos||'Sin puesto']||[]).push(p); else rest.push(p); });
+  var h=Object.keys(mine).sort(function(a,b){ return a.localeCompare(b,'es'); }).map(function(pos){
+    return '<optgroup label="'+esc(cap(pos))+'">'+mine[pos].map(function(p){ return '<option>'+esc(p.n)+'</option>'; }).join('')+'</optgroup>'; }).join('');
+  if(otros && rest.length) h+='<optgroup label="Otros centros">'+rest.map(function(p){ return '<option value="'+esc(p.n)+'">'+esc(p.n+(p.at?' · '+p.at:''))+'</option>'; }).join('')+'</optgroup>';
+  return (STOPT[key]=h);
+}
+function staffSelect(id, attrs, val, cd, first, otros, label){
+  var sel=staffOpts(cd, otros), known=!val || sel.indexOf('<option>'+esc(val)+'</option>')>=0 || sel.indexOf('<option value="'+esc(val)+'">')>=0;
+  var h='<select id="'+id+'" '+attrs+' aria-label="'+esc(label)+'"><option value="">'+esc(first)+'</option>'+
+    (known?'':'<option value="'+esc(val)+'" selected>'+esc(val)+' (no está en el personal)</option>')+sel+'</select>';
+  /* Marca la opción elegida sin reconstruir la lista. */
+  return val&&known ? h.replace('<option>'+esc(val)+'</option>','<option selected>'+esc(val)+'</option>').replace('<option value="'+esc(val)+'">','<option value="'+esc(val)+'" selected>') : h;
 }
 function renderPlanner(){
   var v=$('vPlan'), pl=curPlan();
   $('subtitle').textContent='Arma el plan de la semana, descárgalo como Excel y vuelve a cargarlo para compararlo con lo realizado.';
   if(!pl){ v.innerHTML=noPlans(); return; }
-  var RO=roster(), n=planRows(pl);
-  var h='<datalist id="dlPeople">'+RO.people.map(function(p){ return '<option value="'+esc(p.name)+'">'+(p.pos?esc(p.pos):'')+'</option>'; }).join('')+'</datalist>'+
-    '<datalist id="dlEvals">'+RO.evals.map(function(p){ return '<option value="'+esc(p.name)+'">'+(p.pos?esc(p.pos):'')+'</option>'; }).join('')+'</datalist>';
+  var n=planRows(pl), h='';
   h+='<section class="card psec"><div class="sechead"><div><span class="lbl">Plan semanal</span><h2>'+esc(planName(pl))+'</h2><p class="sub">'+n+' DTO planificados · '+esc(pl.cd)+'</p></div>'+
     '<div class="ctrls">'+(S.plans.length>1?planSelect('planSelA'):'')+'<button type="button" data-act="new">Nuevo plan</button><button type="button" data-act="dup">Copiar a la semana siguiente</button>'+
     '<button type="button" class="btn pri" data-act="dl">Descargar Excel</button></div></div>'+
     '<div class="rules"><label for="plCd">Centro <input type="text" id="plCd" data-f="cd" value="'+esc(pl.cd)+'"></label>'+
     '<label for="plWeek">Semana del <input type="date" id="plWeek" data-f="week" value="'+isoD(pl.week)+'"></label>'+
     '<span class="sub">De lunes a domingo. Al cambiar la semana, las fechas de las filas se mueven con ella.</span>'+
-    '<button type="button" class="quiet" data-act="del">Eliminar este plan</button></div></section>';
+    '<button type="button" class="quiet" data-act="del">Eliminar este plan</button></div>'+
+    (S.staff.length
+      ? '<p class="sub">Personal: '+S.staff.length+' personas'+(S.staffFile?' de "'+esc(S.staffFile)+'"':'')+'. Para actualizarlo, carga un Excel de personal más nuevo con "Cargar Excel".</p>'
+      : '<div class="note">Carga el Excel de personal (HC, con las columnas "Name" y "Position") con "Cargar Excel" para elegir los nombres de una lista, escritos tal cual.</div>')+
+    '</section>';
+  h+=suggestCard(pl);
+  var SL=S.staff.length>0;
   pl.secs.forEach(function(s,si){
     var cv=coverage(pl,s), cnt=s.rows.filter(function(r){ return r.dto||r.evd; }).length;
     h+='<section class="card psec"><div class="sechead"><div><h2>Planificador de DTO de '+esc(s.title)+'</h2><p class="sub">'+cnt+' DTO'+(s.resp?' · Meta de '+esc(s.resp):'')+'</p></div>'+
-      '<div class="ctrls"><label for="sev-'+si+'">Evaluador <input type="text" list="dlEvals" id="sev-'+si+'" data-s="'+si+'" data-f="sev" value="'+esc(s.ev)+'" style="width:250px"></label></div></div>';
+      '<div class="ctrls"><label for="sev-'+si+'">Evaluador '+(SL
+        ? staffSelect('sev-'+si, 'data-s="'+si+'" data-f="sev" style="width:290px"', s.ev, pl.cd, 'Elegir evaluador…', true, 'Evaluador de '+s.title)
+        : '<input type="text" id="sev-'+si+'" data-s="'+si+'" data-f="sev" value="'+esc(s.ev)+'" style="width:250px">')+'</label></div></div>';
     if(cv && cv.list.length) h+='<div class="pills"><span class="sub" style="font-size:12.5px">Contra la meta semanal (mensual ÷ '+cv.div+'):</span>'+cv.list.map(function(it){
       var st=it.meta>0 ? (it.n>=it.meta-1e-9?'good':it.n>0?'warn':'crit') : 'none';
       return '<span class="pill s-'+st+'" data-tip="'+esc(it.name+'\nPlanificados: '+it.n+' · Meta semanal: '+fmtN(it.meta)+(it.meta>0?'':'\nSin meta para este responsable'))+'">'+esc(it.name)+' <b>'+it.n+'/'+fmtN(it.meta)+'</b></span>'; }).join('')+'</div>';
     if(s.rows.length){
-      h+='<div class="scroll"><table class="ptable"><colgroup><col style="width:138px"><col style="width:250px"><col style="width:92px"><col style="width:112px"><col style="width:90px"><col><col style="width:220px"><col style="width:38px"></colgroup>'+
+      h+='<div class="scroll"><table class="ptable"><colgroup><col style="width:138px"><col style="width:250px"><col style="width:92px"><col style="width:112px"><col style="width:90px"><col style="min-width:270px"><col style="width:250px"><col style="width:38px"></colgroup>'+
         '<thead><tr><th>Fecha</th><th>DTO</th><th>Pilar</th><th>Tipo</th><th>Código</th><th>Persona a evaluada</th><th>Evaluador</th><th><span class="vh">Quitar</span></th></tr></thead><tbody>';
       s.rows.forEach(function(r,ri){
         var id='f-'+si+'-'+ri+'-', lab=' fila '+(ri+1)+', '+s.title;
@@ -1039,8 +1072,11 @@ function renderPlanner(){
           '<td><select id="'+id+'tipo" data-s="'+si+'" data-i="'+ri+'" data-f="tipo" aria-label="Tipo'+lab+'">'+['Preventiva','Reactiva'].map(function(t){ return '<option'+(t===r.tipo?' selected':'')+'>'+t+'</option>'; }).join('')+
             (r.tipo&&r.tipo!=='Preventiva'&&r.tipo!=='Reactiva'?'<option selected>'+esc(r.tipo)+'</option>':'')+'</select></td>'+
           '<td><input type="text" id="'+id+'cod" data-s="'+si+'" data-i="'+ri+'" data-f="cod" value="'+esc(r.cod)+'" aria-label="Código'+lab+'"></td>'+
-          '<td><input type="text" list="dlPeople" id="'+id+'evd" data-s="'+si+'" data-i="'+ri+'" data-f="evd" value="'+esc(r.evd)+'" placeholder="Nombre de la persona" aria-label="Persona a evaluada'+lab+'">'+personHint(r.evd,RO,si,ri)+'</td>'+
-          '<td><input type="text" list="dlEvals" id="'+id+'ev" data-s="'+si+'" data-i="'+ri+'" data-f="ev" value="'+esc(r.ev)+'" placeholder="'+esc(s.ev||'Evaluador')+'" aria-label="Evaluador'+lab+'"></td>'+
+          (SL
+            ? '<td>'+staffSelect(id+'evd', 'data-s="'+si+'" data-i="'+ri+'" data-f="evd"', r.evd, pl.cd, 'Elegir persona…', true, 'Persona a evaluada'+lab)+'</td>'+
+              '<td>'+staffSelect(id+'ev', 'data-s="'+si+'" data-i="'+ri+'" data-f="ev"', r.ev, pl.cd, s.ev?'Igual que la sección ('+s.ev+')':'Igual que la sección', true, 'Evaluador'+lab)+'</td>'
+            : '<td><input type="text" id="'+id+'evd" data-s="'+si+'" data-i="'+ri+'" data-f="evd" value="'+esc(r.evd)+'" placeholder="Nombre de la persona" aria-label="Persona a evaluada'+lab+'">'+'</td>'+
+              '<td><input type="text" id="'+id+'ev" data-s="'+si+'" data-i="'+ri+'" data-f="ev" value="'+esc(r.ev)+'" placeholder="'+esc(s.ev||'Evaluador')+'" aria-label="Evaluador'+lab+'"></td>')+
           '<td><button type="button" class="rm" data-act="rm" data-s="'+si+'" data-i="'+ri+'" aria-label="Quitar'+lab+'" title="Quitar fila">×</button></td></tr>';
       });
       h+='</tbody></table></div>';
@@ -1090,6 +1126,56 @@ function renderCmp(){
   v.innerHTML=h;
 }
 
+/* ---------- Sugerencias: personas con menos DTO ---------- */
+/* Puestos que normalmente evalúan; por defecto no se sugieren. */
+var EVPOS = /supervisor|lider|gerente|analista|asistente|auditor|jefe|coordinador/;
+function leastEvaluated(pl){
+  var last=S.evals.reduce(function(a,e){ return Math.max(a,e.dn); }, -1e9), first=S.evals.reduce(function(a,e){ return Math.min(a,e.dn); }, 1e9);
+  var from=S.sug.days==='all' ? first : Math.max(first, last-(+S.sug.days)+1);
+  /* DTO recibidos por cada nombre del reporte (en el período y su último DTO de todo el reporte). */
+  var by={};
+  S.evals.forEach(function(e){
+    var k=norm(e.evd); if(!k) return; var o=by[k]||(by[k]={name:e.evd,n:0,last:-1e9,proc:''});
+    if(e.dn>=from && e.dn<=last) o.n++;
+    if(e.dn>o.last){ o.last=e.dn; o.proc=e.act||e.proc; }
+  });
+  var keys=Object.keys(by), inPlan={};
+  pl.secs.forEach(function(s){ s.rows.forEach(function(r){ if(r.evd) inPlan[norm(r.evd)]=1; }); });
+  var people=S.staff.filter(function(p){
+    if(p.off) return false; if(pl.cd && p.at && norm(p.at)!==norm(pl.cd)) return false;
+    var pk=norm(p.pos); return S.sug.pos==='all' ? true : S.sug.pos==='op' ? !EVPOS.test(pk) : pk===S.sug.pos;
+  }).map(function(p){
+    /* El nombre del personal se cuenta contra el reporte aunque allí esté escrito algo distinto; el nombre que se muestra es el del Excel. */
+    var n=0, lastD=-1e9, proc='';
+    keys.forEach(function(k){ var o=by[k]; if(k===norm(p.n) || sameName(p.n,o.name)){ n+=o.n; if(o.last>lastD){ lastD=o.last; proc=o.proc; } } });
+    return {n:p.n, pos:p.pos, cnt:n, last:lastD, proc:proc, planned:!!inPlan[norm(p.n)]};
+  }).sort(function(a,b){ return a.cnt-b.cnt || a.last-b.last || a.n.localeCompare(b.n,'es'); });
+  return {from:from, last:last, list:people};
+}
+function suggestCard(pl){
+  var h='<section class="card psec"><div class="sechead"><div><span class="lbl">Sugerencias para planificar</span><h2>Personas con menos DTO</h2>';
+  var miss=[]; if(!S.staff.length) miss.push('el Excel de personal (HC)'); if(!S.evals.length) miss.push('el reporte "Data OWD"');
+  if(miss.length) return h+'</div></div><p class="sub">Para que la lista sea real hace falta cargar '+miss.join(' y ')+' con "Cargar Excel". Se mostrará cuando estén los dos.</p></section>';
+  var L=leastEvaluated(pl), pos={};
+  S.staff.forEach(function(p){ if(!p.off && p.pos && (!pl.cd || !p.at || norm(p.at)===norm(pl.cd))) pos[norm(p.pos)]=p.pos; });
+  var show=L.list.slice(0, 15*(S.sug.more+1)), zero=L.list.filter(function(p){ return !p.cnt; }).length;
+  h+='<p class="sub">'+esc(pl.cd)+' · DTO recibidos del '+dLabel(L.from)+' al '+dLabel(L.last)+' '+parts(L.last).y+' · '+L.list.length+' personas, '+zero+' sin ningún DTO</p></div></div>'+
+    '<div class="rules">'+
+    '<label for="sugDays">Período <select id="sugDays" data-f="sug-days">'+[['7','Últimos 7 días'],['30','Últimos 30 días'],['90','Últimos 90 días'],['all','Todo el reporte']].map(function(o){ return '<option value="'+o[0]+'"'+(S.sug.days===o[0]?' selected':'')+'>'+o[1]+'</option>'; }).join('')+'</select></label>'+
+    '<label for="sugPos">Puesto <select id="sugPos" data-f="sug-pos"><option value="op"'+(S.sug.pos==='op'?' selected':'')+'>Personal operativo</option><option value="all"'+(S.sug.pos==='all'?' selected':'')+'>Todos los puestos</option>'+
+      Object.keys(pos).sort().map(function(k){ return '<option value="'+esc(k)+'"'+(S.sug.pos===k?' selected':'')+'>'+esc(cap(pos[k]))+'</option>'; }).join('')+'</select></label>'+
+    '<label for="sugSec">Agregar a <select id="sugSec" data-f="sug-sec">'+pl.secs.map(function(s,i){ return '<option value="'+i+'"'+(S.sug.sec===i?' selected':'')+'>'+esc(s.title)+'</option>'; }).join('')+'</select></label></div>';
+  if(!show.length) return h+'<p class="sub">No hay personas de ese puesto en el personal de '+esc(pl.cd)+'.</p></section>';
+  h+='<div class="scroll"><table><thead><tr><th>Persona</th><th>Puesto</th><th class="r">DTO en el período</th><th>Último DTO recibido</th><th></th></tr></thead><tbody>'+
+    show.map(function(p){
+      return '<tr><td>'+esc(p.n)+'</td><td><span class="extra">'+esc(cap(p.pos||'—'))+'</span></td><td class="r"><strong>'+p.cnt+'</strong></td>'+
+        '<td>'+(p.last>-1e9?dLabel(p.last)+' '+parts(p.last).y+'<br><span class="extra">'+esc(p.proc)+'</span>':'<span class="extra">Nunca en el reporte</span>')+'</td>'+
+        '<td class="r">'+(p.planned?'<span class="tag">Ya en el plan</span> ':'')+'<button type="button" data-act="sugadd" data-v="'+esc(p.n)+'">Agregar</button></td></tr>';
+    }).join('')+'</tbody></table></div>';
+  if(L.list.length>show.length) h+='<div class="ctrls"><button type="button" data-act="sugmore">Ver 15 más</button><span class="sub">'+show.length+' de '+L.list.length+'</span></div>';
+  return h+'</section>';
+}
+
 /* Re-render sin perder el campo activo. */
 function softPlanner(){ setTimeout(function(){ var a=document.activeElement, id=a&&a.id; renderPlanner(); if(id && $(id)) $(id).focus(); }, 0); }
 function onPlanChange(e){
@@ -1097,6 +1183,7 @@ function onPlanChange(e){
   if(t.classList.contains('plsel')){ S.planId=t.value; S.cmpF='all'; save(); render(); return; }
   if(!pl || !t.dataset.f) return;
   var f=t.dataset.f, si=+t.dataset.s, ri=+t.dataset.i;
+  if(f.indexOf('sug-')===0){ var sk=f.slice(4); S.sug[sk]=sk==='sec'?+t.value:t.value; if(sk!=='sec') S.sug.more=0; softPlanner(); return; }
   if(f==='cd') pl.cd=clean(t.value)||pl.cd;
   else if(f==='week'){ var w=fromIso(t.value); if(w==null) return; w=mondayOf(w); var dd=w-pl.week; pl.week=w; pl.secs.forEach(function(s){ s.rows.forEach(function(r){ if(r.d!=null) r.d+=dd; }); }); sortPlans(); }
   else if(f==='sev') pl.secs[si].ev=clean(t.value);
@@ -1122,10 +1209,14 @@ function onPlanClick(e){
   }else if(act==='dl' && pl){ downloadPlan(pl); return; }
   else if(act==='cmpdl' && pl){ downloadCmp(pl); return; }
   else if(act==='edit'){ S.view='plan'; }
+  else if(act==='sugmore'){ S.sug.more++; renderPlanner(); return; }
+  else if(act==='sugadd' && pl){
+    var sec=pl.secs[S.sug.sec]||pl.secs[0], nr=blankRow(pl.week); nr.evd=b.dataset.v; sec.rows.push(nr);
+    showInfo(b.dataset.v+' se agregó a '+sec.title+'. Falta elegir el DTO.');
+  }
   else if(act==='add' && pl){ var rs=pl.secs[si].rows, last=rs[rs.length-1]; rs.push(blankRow(last&&last.d!=null?last.d:pl.week)); save(); renderPlanner(); var el=$('f-'+si+'-'+(rs.length-1)+'-dto'); if(el) el.focus(); return; }
   else if(act==='rm' && pl){ pl.secs[si].rows.splice(ri,1); }
   else if(act==='fill' && pl){ var k=fillFromMeta(pl, si); showInfo(k?'Se agregaron '+k+' filas a '+pl.secs[si].title+'. Falta poner la persona a evaluar.':''); }
-  else if(act==='sug' && pl){ var rr=pl.secs[si].rows[ri]; if(rr) rr.evd=b.dataset.v; }
   else return;
   save(); render();
 }
