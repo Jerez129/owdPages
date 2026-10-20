@@ -929,11 +929,11 @@ function downloadPlan(pl){
 }
 
 /* ---------- Plan vs realizado ---------- */
-var CST = {ok:['good','Realizado'], otro:['good','Hecho por otro evaluador'], fuera:['warn','Fuera de la semana'], no:['crit','No realizado'], pend:['none','Pendiente']};
+var CST = {ok:['good','Realizado'], fuera:['warn','Fuera de la semana'], no:['crit','No realizado'], pend:['none','Pendiente']};
 function comparePlan(pl){
   var ws=pl.week, we=ws+6, last=S.evals.reduce(function(a,e){ return Math.max(a,e.dn); }, -1e9), used=new Set();
-  /* Fuera de la semana: hasta 7 días antes (adelantado) o 14 después (atrasado). */
-  var pool=S.evals.filter(function(e){ return e.dn>=ws-7 && e.dn<=we+14; });
+  /* Fuera de la semana: solo lo hecho en la semana siguiente (lunes a domingo). Lo de semanas anteriores no cuenta. */
+  var pool=S.evals.filter(function(e){ return e.dn>=ws && e.dn<=we+7; });
   var rows=[];
   pl.secs.forEach(function(s){ s.rows.forEach(function(r){ if(r.dto||r.evd) rows.push({s:s, r:r, ev:r.ev||s.ev, k:r.dto?procKey(r.dto):'', st:'', m:null}); }); });
   function pick(x, inWeek){
@@ -942,21 +942,23 @@ function comparePlan(pl){
       if(used.has(e)) return;
       var iw=e.dn>=ws && e.dn<=we; if(iw!==inWeek) return;
       if(x.k && evKey(e)!==x.k) return;
-      if(x.r.evd ? !sameName(x.r.evd,e.evd) : !sameName(x.ev,e.ev)) return;
-      var sc=(sameName(x.ev,e.ev)?1000:0) - Math.abs(e.dn-at) + (norm(e.type)===norm(x.r.tipo)?0.5:0);
+      /* Solo cuenta si lo hizo el evaluador planificado. */
+      if(!sameName(x.ev,e.ev)) return;
+      if(x.r.evd && !sameName(x.r.evd,e.evd)) return;
+      var sc=-Math.abs(e.dn-at) + (norm(e.type)===norm(x.r.tipo)?0.5:0);
       if(sc>bs){ bs=sc; best=e; }
     });
     return best;
   }
   /* Primero las filas con persona (más precisas), luego las que solo dicen proceso y evaluador. */
   var order=rows.filter(function(x){ return x.r.evd; }).concat(rows.filter(function(x){ return !x.r.evd; }));
-  order.forEach(function(x){ var m=pick(x,true); if(m){ used.add(m); x.m=m; x.st=sameName(x.ev,m.ev)?'ok':'otro'; } });
+  order.forEach(function(x){ var m=pick(x,true); if(m){ used.add(m); x.m=m; x.st='ok'; } });
   order.forEach(function(x){ if(x.m || !x.r.evd || !x.k || (x.r.d!=null?x.r.d:ws)>last) return; var m=pick(x,false); if(m){ used.add(m); x.m=m; x.st='fuera'; } });
   order.forEach(function(x){ if(!x.st) x.st=(x.r.d!=null?x.r.d:ws)>last ? 'pend' : 'no'; });
   var evs=[]; rows.forEach(function(x){ if(x.ev && !evs.some(function(v){ return sameName(v,x.ev); })) evs.push(x.ev); });
   var extra=pool.filter(function(e){ return e.dn>=ws && e.dn<=we && !used.has(e) && evs.some(function(v){ return sameName(v,e.ev); }); })
     .sort(function(a,b){ return a.dn-b.dn || (a.hm<b.hm?-1:1); });
-  function sum(list){ var o={n:list.length,ok:0,otro:0,fuera:0,no:0,pend:0}; list.forEach(function(x){ o[x.st]++; }); o.done=o.ok+o.otro; o.due=o.n-o.pend; o.p=o.due?o.done/o.due:null; return o; }
+  function sum(list){ var o={n:list.length,ok:0,fuera:0,no:0,pend:0}; list.forEach(function(x){ o[x.st]++; }); o.done=o.ok; o.due=o.n-o.pend; o.p=o.due?o.done/o.due:null; return o; }
   var secs=pl.secs.map(function(s){ var l=rows.filter(function(x){ return x.s===s; }); return {s:s, rows:l, sum:sum(l)}; }).filter(function(x){ return x.rows.length; });
   return {rows:rows, secs:secs, total:sum(rows), extra:extra, last:last, ws:ws, we:we};
 }
@@ -1099,15 +1101,15 @@ function renderCmp(){
   var T=C.total;
   h+='<section class="month"><div class="card hero"><span class="lbl">Plan realizado</span><div class="big">'+pct(T.p)+'</div>'+meter(T.p)+'<div>'+(T.p==null?chip('none','El reporte aún no llega a esta semana'):chip(T.p))+'</div>'+
     '<div class="facts num"><span><strong>'+T.done+'</strong> de '+T.due+' DTO que ya debían estar hechos</span>'+(T.pend?'<span>'+T.n+' planificados en total</span>':'')+
-    (T.otro?'<span>'+T.otro+' hechos por otro evaluador</span>':'')+(T.fuera?'<span>'+T.fuera+' hechos fuera de la semana (no cuentan)</span>':'')+
+    (T.fuera?'<span>'+T.fuera+' hechos la semana siguiente (no cuentan)</span>':'')+
     (T.no?'<span>'+T.no+' no realizados</span>':'')+(T.pend?'<span>'+T.pend+' pendientes: su fecha es posterior al reporte</span>':'')+
     '<span>'+C.extra.length+' realizados sin planificar</span></div></div>'+
     '<div class="card">'+hbars('Por sección · % del plan realizado', C.secs.map(function(x){ return {name:x.s.title+(x.s.ev?' · '+x.s.ev:''), roll:{p:x.sum.p,real:x.sum.done,cnt:x.sum.done,plan:x.sum.due}}; }), 100)+'</div></section>';
-  var F=[['all','Todos'],['no','No realizados'],['fuera','Fuera de la semana'],['otro','Otro evaluador'],['done','Realizados'],['pend','Pendientes']];
+  var F=[['all','Todos'],['no','No realizados'],['fuera','Fuera de la semana'],['done','Realizados'],['pend','Pendientes']];
   h+='<div class="sechead"><h2>Detalle del plan</h2><div class="seg" id="cmpSeg" role="group" aria-label="Filtrar por estado">'+F.map(function(f){
     var c=f[0]==='all'?T.n:f[0]==='done'?T.done:T[f[0]]; if(f[0]!=='all'&&!c) return '';
     return '<button type="button" data-cf="'+f[0]+'" aria-pressed="'+(S.cmpF===f[0])+'">'+f[1]+' · '+c+'</button>'; }).join('')+'</div></div>';
-  function keep(x){ return S.cmpF==='all' || x.st===S.cmpF || (S.cmpF==='done' && (x.st==='ok'||x.st==='otro')); }
+  function keep(x){ return S.cmpF==='all' || x.st===S.cmpF || (S.cmpF==='done' && x.st==='ok'); }
   var t='<table class="cmp"><thead><tr><th>Fecha plan</th><th>DTO</th><th>Persona a evaluada</th><th>Evaluador</th><th>Estado</th><th>Lo realizado</th></tr></thead><tbody>', any=false;
   C.secs.forEach(function(x){
     var l=x.rows.filter(keep); if(!l.length) return; any=true;
