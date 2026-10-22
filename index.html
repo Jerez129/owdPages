@@ -227,6 +227,7 @@ input[type=date]{font:inherit;color:var(--ink);background:var(--surface);border:
       <label class="btn pri" for="fileIn" id="fileBtn" tabindex="0">Cargar Excel</label>
       <input class="vh" type="file" id="fileIn" accept=".xlsx,.xls,.csv" multiple tabindex="-1">
       <button type="button" id="planBtn" aria-expanded="false" aria-controls="editor">Plan y reglas</button>
+      <button type="button" class="quiet" id="syncBtn" title="Cambiar la clave de edición"><span id="sync">Base de datos…</span></button>
     </div>
   </header>
 
@@ -390,7 +391,8 @@ function planLabel(){ var P=S.plan, a=[]; if(P.cd) a.push(P.cd); if(P.mes&&P.yea
 function save(){
   try{ localStorage.setItem(KEY, JSON.stringify({plan:S.plan, div:S.div, cap:S.cap, map:S.map, fileName:S.fileName, agency:S.agency, month:S.month, area:S.area,
     view:S.view, plans:S.plans, planId:S.planId, staff:S.staff, staffFile:S.staffFile,
-    evals:S.evals.map(function(e){ return [e.ev,e.pos,e.proc,e.act,e.evd,e.evdPos,e.type,e.y,e.m,e.d,e.hm,e.n,e.fails]; })})); }catch(_){}
+    evals:S.evals.map(function(e){ return [e.ev,e.pos,e.proc,e.act,e.evd,e.evdPos,e.type,e.y,e.m,e.d,e.hm,e.n,e.fails,e.k]; })})); }catch(_){}
+  syncRemote();
 }
 function load(){
   try{
@@ -401,8 +403,100 @@ function load(){
     if(Array.isArray(o.plans)) S.plans=o.plans.filter(function(p){ return p && Array.isArray(p.secs) && typeof p.week==='number'; });
     if(Array.isArray(o.staff)) S.staff=o.staff.filter(function(p){ return p && p.n; }); S.staffFile=o.staffFile||'';
     S.planId=o.planId||null; if(o.view==='adh'||o.view==='plan'||o.view==='cmp') S.view=o.view; S.agency=o.agency||''; S.month=o.month||null; S.area=o.area||'all';
-    S.evals=(o.evals||[]).map(function(a){ return {ev:a[0],pos:a[1],proc:a[2],act:a[3],evd:a[4],evdPos:a[5],type:a[6],y:a[7],m:a[8],d:a[9],hm:a[10],n:a[11],fails:a[12]||[],dn:dn(a[7],a[8],a[9])}; });
+    S.evals=(o.evals||[]).map(function(a){ return {ev:a[0],pos:a[1],proc:a[2],act:a[3],evd:a[4],evdPos:a[5],type:a[6],y:a[7],m:a[8],d:a[9],hm:a[10],n:a[11],fails:a[12]||[],k:a[13]||'',dn:dn(a[7],a[8],a[9])}; });
   }catch(_){}
+}
+
+/* ---------- Base de datos (Cloudflare D1) ----------
+   Leer es libre. Guardar pide la clave de edición una vez y el navegador la recuerda.
+   El navegador guarda una copia por si no hay conexión; la base es la que manda. */
+/* En pruebas locales se puede apuntar a otro Worker con ?api=http://localhost:8787 */
+var API = (/^(localhost|127\.0\.0\.1)$/.test(location.hostname) && new URLSearchParams(location.search).get('api')) || 'https://owd-api.japf20092004.workers.dev';
+var KEYK = 'owd-clave', DB = {on:false, ready:false, snap:{}};
+function getClave(){ try{ return localStorage.getItem(KEYK)||''; }catch(_){ return ''; } }
+function setClave(k){ try{ if(k) localStorage.setItem(KEYK,k); else localStorage.removeItem(KEYK); }catch(_){} }
+function setSync(st, txt){
+  var el=$('sync'); if(!el) return;
+  el.textContent = txt || {ok:'Base de datos: guardado', saving:'Guardando en la base…', load:'Leyendo la base…', off:'Sin conexión con la base', err:'No se pudo guardar'}[st] || '';
+  el.style.color = st==='err'||st==='off' ? 'var(--crit)' : '';
+}
+function api(method, path, body){
+  var h={'Content-Type':'application/json'}; if(method!=='GET') h['X-Clave']=getClave();
+  return fetch(API+path, {method:method, headers:h, body:body===undefined?undefined:JSON.stringify(body)})
+    .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(d){ if(!r.ok){ var e=new Error(d.error||('Error '+r.status)); e.status=r.status; throw e; } return d; }); });
+}
+var askP=null;
+/* Si se cancela o falla la clave, no se vuelve a pedir hasta tocar el botón de la base en el encabezado. */
+function askKey(){
+  if(DB.noKey) return Promise.resolve(false);
+  if(!askP) askP=new Promise(function(res){ setTimeout(function(){ var k=prompt('Para guardar en la base de datos, escribe la clave de edición:'); askP=null; if(k&&k.trim()){ setClave(k.trim()); res(true); } else { DB.noKey=true; res(false); } }, 0); });
+  return askP;
+}
+/* Escribe en la base; si falta la clave la pide una vez y reintenta. */
+function write(method, path, body){
+  setSync('saving');
+  var fresh=!getClave();  /* si la clave se acaba de escribir y falla, no se vuelve a pedir */
+  return (fresh ? askKey() : Promise.resolve(true)).then(function(){ return api(method, path, body); }).catch(function(e){
+    if(e.status!==401 || fresh) throw e;
+    setClave('');
+    return askKey().then(function(ok){ if(!ok) throw e; return api(method, path, body); });
+  }).then(function(d){ setSync('ok'); return d; })
+    .catch(function(e){ if(e.status===401){ setClave(''); DB.noKey=true; } setSync('err', e.status===401 ? 'No se guardó: falta la clave (toca aquí para escribirla)' : 'No se pudo guardar en la base'); throw e; });
+}
+function evRow(e){ return {k:e.k, ev:e.ev, pos:e.pos, proc:e.proc, act:e.act, evd:e.evd, evd_pos:e.evdPos, type:e.type, y:e.y, m:e.m, d:e.d, hm:e.hm, dn:e.dn, n:e.n, fails:e.fails}; }
+function cfgNow(){ return {plan:S.plan, div:S.div, cap:S.cap, map:S.map, fileName:S.fileName, agency:S.agency, staffFile:S.staffFile}; }
+/* Sube los DTO en tandas de 400; la base ignora los repetidos. */
+function pushEvals(list, agency){
+  var rows=list.filter(function(e){ return e.k; }).map(evRow), added=0, i=0;
+  function next(){ if(i>=rows.length) return Promise.resolve(added); var part=rows.slice(i,i+400); i+=400;
+    return write('POST','/api/evals',{evals:part, agency:agency}).then(function(d){ added+=d.added||0; return next(); }); }
+  return next();
+}
+/* Compara con lo último guardado y sube solo lo que cambió (planes, personal, ajustes). */
+var syncT=null;
+function syncRemote(){
+  if(!DB.ready) return;
+  clearTimeout(syncT);
+  syncT=setTimeout(function(){ syncT=null; doSync().catch(function(){}); }, 700);
+}
+function doSync(){
+  clearTimeout(syncT); syncT=null;
+  if(!DB.ready) return Promise.resolve();
+  {
+    var jobs=[], seen={};
+    S.plans.forEach(function(p){ var j=JSON.stringify(p); seen[p.id]=1; if(DB.snap['p:'+p.id]!==j) jobs.push(write('PUT','/api/plans/'+p.id,p).then(function(){ DB.snap['p:'+p.id]=j; })); });
+    Object.keys(DB.snap).forEach(function(k){ if(k.indexOf('p:')===0 && !seen[k.slice(2)]) jobs.push(write('DELETE','/api/plans/'+k.slice(2)).then(function(){ delete DB.snap[k]; })); });
+    var st=JSON.stringify(S.staff); if(DB.snap.staff!==st) jobs.push(write('PUT','/api/staff',{staff:S.staff}).then(function(){ DB.snap.staff=st; }));
+    var cf=JSON.stringify(cfgNow()); if(DB.snap.cfg!==cf) jobs.push(write('PUT','/api/config/ajustes',cfgNow()).then(function(){ DB.snap.cfg=cf; }));
+    return Promise.all(jobs);
+  }
+}
+function snapshot(){ DB.snap={staff:JSON.stringify(S.staff), cfg:JSON.stringify(cfgNow())}; S.plans.forEach(function(p){ DB.snap['p:'+p.id]=JSON.stringify(p); }); }
+/* Trae todo de la base y reemplaza la copia del navegador. */
+function pullRemote(){
+  /* Si algo no se pudo guardar (por ejemplo, sin clave), se conserva lo del navegador y solo se actualizan los DTO. */
+  var synced=true, pending=DB.ready ? doSync().catch(function(){ synced=false; }) : Promise.resolve();
+  return pending.then(function(){ setSync('load'); return api('GET','/api/state'); }).then(function(d){
+    var empty=!d.evals.length && !d.staff.length && !d.plans.length && !d.config.ajustes;
+    var local=S.evals.length || S.staff.length || S.plans.length;
+    if(empty && local && !DB.ready && confirm('La base de datos está vacía. ¿Subir los datos que tienes en este navegador (reporte, personal y planes)?')){
+      DB.ready=true; DB.snap={};
+      return pushEvals(S.evals, S.agency).then(function(){ syncRemote(); return pullRemote(); });
+    }
+    if(empty && local){ setSync('off','Base vacía: trabajando solo en este navegador'); return; }
+    S.evals=d.evals.map(function(r){ return {k:r.k, ev:r.ev, pos:r.pos, proc:r.proc, act:r.act, evd:r.evd, evdPos:r.evd_pos, type:r.type, y:r.y, m:r.m, d:r.d, hm:r.hm, n:r.n, fails:r.fails||[], dn:r.dn}; });
+    if(!synced){ R=null; save(); render(); setSync('err','Hay cambios sin guardar en la base'); return; }
+    S.staff=d.staff; S.plans=d.plans; sortPlans();
+    var c=d.config.ajustes;
+    if(c){
+      if(c.plan && Array.isArray(c.plan.resp) && c.plan.resp.length) S.plan=clonePlan(c.plan);
+      if(c.div) S.div=c.div; if(typeof c.cap==='boolean') S.cap=c.cap;
+      S.map=Object.assign(defMap(), c.map||{}); S.fileName=c.fileName||''; S.agency=c.agency||''; S.staffFile=c.staffFile||'';
+    }
+    NM={}; STOPT={}; R=null; DB.on=true; DB.ready=true; snapshot();
+    setSync('ok', 'Base de datos: conectada');
+    save(); render();
+  }).catch(function(){ DB.on=false; setSync('off'); });
 }
 
 /* ---------- Lectura de los Excel ---------- */
@@ -465,7 +559,7 @@ function parseData(found){
     var proc=g(row,cP); if(!proc) continue;
     var f=parseDate(row[cF]); if(!f){ bad++; continue; }
     var ev=g(row,cE), evd=g(row,cEv), key=norm(ev)+'|'+norm(evd)+'|'+f.k+'|'+norm(proc), e=map.get(key);
-    if(!e){ e={ev:ev,pos:g(row,cPos),proc:proc,act:g(row,cAc),evd:evd,evdPos:g(row,cEvP),type:g(row,cTy),y:f.y,m:f.m,d:f.d,hm:f.hm,dn:dn(f.y,f.m,f.d),n:0,fails:[],seen:{}}; map.set(key,e); }
+    if(!e){ e={k:key,ev:ev,pos:g(row,cPos),proc:proc,act:g(row,cAc),evd:evd,evdPos:g(row,cEvP),type:g(row,cTy),y:f.y,m:f.m,d:f.d,hm:f.hm,dn:dn(f.y,f.m,f.d),n:0,fails:[],seen:{}}; map.set(key,e); }
     var ta=g(row,cTa), tk=norm(ta)+'|'+norm(g(row,cDe))+'|'+(cPu>=0?norm(row[cPu]):'');
     if(!ta || !e.seen[tk]){ e.seen[tk]=1; e.n++; if(cPu>=0 && norm(row[cPu])==='no ok') e.fails.push(ta||'(sin nombre)'); }
     if(!e.pos) e.pos=g(row,cPos); if(!e.evdPos) e.evdPos=g(row,cEvP);
@@ -487,7 +581,7 @@ function readFile(file){
         if(st){ var ns=importStaff(st); S.staffFile=file.name; infos.push('Se cargó el personal: '+ns+' personas. Ya puedes elegirlas de la lista en el planificador.'); if(!pw && !d) staffLoaded=true; }
         /* Un mismo libro puede traer el planificador y la data (como "Libro1"): se leen los dos. */
         if(pw){ var got=importPlanner(pw); infos.push('Se cargó el planificador: '+got.join(', ')+'.'); planLoaded=true; }
-        if(d){ var out=parseData(d); S.evals=out.evals; S.fileName=file.name; S.agency=out.agency; S.month=null; S.open={}; if(out.bad) msgs.push('Se omitieron '+out.bad+' filas sin fecha válida.'); }
+        if(d){ var out=parseData(d); newEvals=newEvals.concat(out.evals); newAgency=out.agency; S.evals=out.evals; S.fileName=file.name; S.agency=out.agency; S.month=null; S.open={}; if(out.bad) msgs.push('Se omitieron '+out.bad+' filas sin fecha válida.'); }
         else if(p){ S.plan=parsePlan(p); S.area='all'; }
         if(!pw && !d && !p && !st) throw new Error('No reconocí "'+file.name+'". El reporte debe traer las columnas "Proceso" y "Fecha evaluación"; el plan, una fila "Responsable" y una columna "Proceso"; el planificador, las columnas "DTO", "Persona a evaluada" y "Evaluador"; el personal (HC), las columnas "Name" y "Position".');
         res(msgs.join(' '));
@@ -498,11 +592,18 @@ function readFile(file){
 }
 function readFiles(list){
   var files=Array.prototype.slice.call(list||[]); if(!files.length) return;
-  var msgs=[]; infos=[]; planLoaded=false; staffLoaded=false;
+  var msgs=[]; infos=[]; planLoaded=false; staffLoaded=false; newEvals=[]; newAgency='';
   files.reduce(function(p,f){ return p.then(function(){ return readFile(f); }).then(function(m){ if(m) msgs.push(m); }); }, Promise.resolve())
-    .then(function(){ showMsg(msgs.join(' ')); showInfo(infos.join(' ')); if(planLoaded) S.view='cmp'; else if(staffLoaded) S.view='plan'; save(); render(); });
+    .then(function(){ showMsg(msgs.join(' ')); showInfo(infos.join(' ')); if(planLoaded) S.view='cmp'; else if(staffLoaded) S.view='plan'; save(); render();
+      /* Con base: se suben los DTO nuevos (los repetidos se ignoran) y se vuelve a leer todo, con lo de otros reportes. */
+      if(DB.ready && newEvals.length) saveEvals(newEvals, newAgency, infos.join(' ')); });
 }
-var infos=[], planLoaded=false, staffLoaded=false;
+var infos=[], planLoaded=false, staffLoaded=false, newEvals=[], newAgency='';
+/* Sube los DTO de un reporte; si no se pudo (por ejemplo, sin clave), quedan pendientes para reintentar. */
+function saveEvals(list, agency, pre){
+  return pushEvals(list, agency).then(function(n){ DB.pendEvals=null; showInfo(((pre||'')+' Se guardaron '+n+' DTO nuevos en la base.').trim()); return pullRemote(); })
+    .catch(function(){ DB.pendEvals={list:list, agency:agency}; });
+}
 function showMsg(t){ var m=$('msg'); m.textContent=t||''; m.hidden=!t; }
 function showInfo(t){ var m=$('info'); m.textContent=t||''; m.hidden=!t; }
 
@@ -1244,7 +1345,9 @@ $('matrix').addEventListener('change', function(e){
 });
 $('evalList').addEventListener('change', function(e){ var t=e.target; if(t.dataset&&t.dataset.ev!==undefined){ S.map[t.dataset.ev]=t.value; save(); render(); } });
 $('areaSeg').addEventListener('click', function(e){ var b=e.target.closest('button'); if(b){ S.area=b.dataset.area; save(); render(); } });
-$('notes').addEventListener('click', function(e){ if(e.target.id==='clearData'){ S.evals=[]; S.fileName=''; S.agency=''; S.month=null; S.open={}; R=null; showMsg(''); save(); render(); } });
+$('notes').addEventListener('click', function(e){ if(e.target.id==='clearData'){
+  if(DB.ready){ if(!confirm('Esto borra todos los DTO de la base de datos, para todas las personas que usan la página. ¿Continuar?')) return; write('DELETE','/api/evals').then(pullRemote).catch(function(){}); return; }
+  S.evals=[]; S.fileName=''; S.agency=''; S.month=null; S.open={}; R=null; showMsg(''); save(); render(); } });
 $('pplTable').addEventListener('click', function(e){ var tr=e.target.closest('tr.p'); if(tr){ var k=tr.getAttribute('data-k'); S.open[k]=!S.open[k]; renderPeople(); } });
 $('personQ').addEventListener('input', function(e){ S.q=e.target.value; renderPeople(); });
 $('pplToggle').addEventListener('click', function(){
@@ -1271,6 +1374,7 @@ document.addEventListener('focusin', function(e){ var el=e.target.closest&&e.tar
 document.addEventListener('focusout', function(){ tip.hidden=true; });
 window.addEventListener('scroll', function(){ tip.hidden=true; }, true);
 
-load(); render();
+load(); render(); pullRemote();
+$('syncBtn').addEventListener('click', function(){ var k=prompt('Clave de edición para guardar en la base (déjala vacía para olvidarla en este navegador):', ''); if(k===null) return; setClave(k.trim()); DB.noKey=false; setSync('ok', k.trim()?'Clave guardada en este navegador':'Clave olvidada'); if(DB.ready){ syncRemote(); if(DB.pendEvals && getClave()) saveEvals(DB.pendEvals.list, DB.pendEvals.agency); } });
 })();
 </script>
