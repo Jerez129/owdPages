@@ -244,7 +244,6 @@ input[type=date]{font:inherit;color:var(--ink);background:var(--surface);border:
   <div class="view" id="vCmp" hidden></div>
 
   <div class="view" id="vAdh">
-  <div class="note" id="note" hidden></div>
 
   <section class="card editor" id="editor" hidden>
     <div class="sechead">
@@ -728,7 +727,7 @@ function renderAdh(){
   $('empty').style.display=has?'none':'flex'; $('dash').style.display=has?'flex':'none';
   if(!has){
     $('subtitle').textContent='Carga el reporte "Data OWD" para medir el mes contra el plan.';
-    $('planPrev').innerHTML=planTable(false); $('evalBox').hidden=true; $('note').hidden=true; return;
+    $('planPrev').innerHTML=planTable(false); $('evalBox').hidden=true; return;
   }
   var ms=months(); if(!S.month||ms.indexOf(S.month)<0) S.month=ms[ms.length-1];
   $('monthSel').innerHTML=ms.map(function(k){ var p=k.split('-'); return '<option value="'+k+'"'+(k===S.month?' selected':'')+'>'+MESES[+p[1]-1]+' '+p[0]+'</option>'; }).join('');
@@ -736,9 +735,6 @@ function renderAdh(){
   if(S.area!=='all' && !R.areas.some(function(a){ return a.id===S.area; })) S.area='all';
   var T=R.total, mesTxt=MESES[R.m-1]+' de '+R.y, P=S.plan;
   $('subtitle').textContent=[S.agency, mesTxt, S.fileName].filter(Boolean).join(' · ');
-  var mism=P.mes&&P.year&&(P.mes!==R.m||P.year!==R.y);
-  $('note').hidden=!mism;
-  if(mism) $('note').textContent='El plan cargado es de '+MESES[P.mes-1]+' de '+P.year+' y los datos son de '+mesTxt+'. La adherencia se calcula con ese plan; si el mes tenía otras metas, carga su Excel "Meta OWD".';
 
   /* Resumen y gráfica mensual */
   $('legend').innerHTML=chip('good','Cumple: 100 % o más')+chip('warn','Parcial: desde 70 %')+chip('crit','Bajo: menos de 70 %');
